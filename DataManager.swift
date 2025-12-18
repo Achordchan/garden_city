@@ -2,7 +2,7 @@
 //  DataManager.swift
 //  tingche
 //
-//  Created by AI Assistant on 2025/9/8.
+//  Created by A chord on 2025/9/8.
 //
 
 import Foundation
