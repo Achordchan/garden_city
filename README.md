@@ -27,15 +27,11 @@
 - 备份操作：立即备份、查看备份、导入/导出
 - 高级设置：管理员秘钥解锁（秘钥：`Achord666`），并带“危险区”占位扩展
 
-### About 作者页
-- 头像展示（AsyncImage）
-- 联系方式（Tel/Email）
-- 底部链接按钮（项目地址/隐私条款/开源协议/赞助）
-- 支持预设文案展示（不可编辑，可复制）
-
 ## 重要说明（请务必阅读）
 
 ### 使用范围与免责声明
+软件内不提供任何账号，请从正规途径取得，并自行寻找获得积分方法！不要来私信问我，恕我无法帮助。
+
 本工具仅用于个人学习与效率提升。除基础的网络请求调用与界面管理外，未进行任何逆向破解行为。
 
 请勿用于任何违规用途。若你下载或使用本项目代码/应用，请在法律与平台规则允许范围内使用。
@@ -68,39 +64,9 @@
 - Xcode（建议 Xcode 15 或更高）
 - Swift / SwiftUI
 
-## 本地运行（Debug）
-1. 用 Xcode 打开 `tingche.xcodeproj`
-2. 选择 Scheme 后直接 Run
-
-如果遇到构建问题：
-- Product -> Clean Build Folder
-- 删除派生数据（可选）：`rm -rf ~/Library/Developer/Xcode/DerivedData/tingche-*`
-
-## 打包发布（Release + DMG）
-
-### 1) 生成 .app
-推荐用 Xcode 的 `Product -> Archive` 导出 Release 构建产物（.app）。
-
-### 2) 生成 DMG
-项目外有脚本可用于打包 DMG（普通版/酷炫版）。
-
-酷炫版 DMG 支持：
-- 自定义背景图
-- 图标摆位（App 与 Applications）
-- Finder 窗口样式（隐藏工具栏/路径栏等）
-
-建议将 DMG 作为 GitHub Releases 附件发布，而不是直接提交到仓库（避免仓库被大二进制文件膨胀）。
-
-## 应用改名与图标
-常见需要同时修改：
-- Target -> General -> Display Name
-- Build Settings -> Product Name
-- Assets.xcassets -> AppIcon（务必是 App Icon 类型，且 Target 指向它）
-
 ## 联系方式
 - 作者：Achord
 - Email：achordchan@gmail.com
-- Tel：13160235855
 
 ## TODO
 - 文本格式批量导入（例如：账号-密码-停车券数量-今日是否获取）
