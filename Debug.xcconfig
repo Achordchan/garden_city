@@ -1,0 +1,16 @@
+//
+// Debug.xcconfig
+//
+
+// Allow entitlements modification
+CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION = YES
+
+// Code signing
+CODE_SIGN_STYLE = Automatic
+CODE_SIGN_IDENTITY = -
+
+// Enable debugging
+DEBUG_INFORMATION_FORMAT = dwarf-with-dsym
+ENABLE_TESTABILITY = YES
+GCC_OPTIMIZATION_LEVEL = 0
+SWIFT_OPTIMIZATION_LEVEL = -Onone 
