@@ -1,4 +1,4 @@
-# 花园城停车助手 v3
+# 停车助手 v3
 
 一款用于管理账号、查询/兑换停车券、管理车牌号，并支持备份与恢复的 macOS 应用。
 
@@ -27,6 +27,10 @@
 - 备份操作：立即备份、查看备份、导入/导出
 - 高级设置：管理员秘钥解锁（秘钥：`Achord666`），并带“危险区”占位扩展
 
+
+<img width="426" alt="image" src="https://raw.githubusercontent.com/Achordchan/garden_city/refs/heads/main/ScreenShot_2025-12-18_165659_344.png">
+
+
 ## 重要说明（请务必阅读）
 
 ### 使用范围与免责声明
@@ -43,6 +47,10 @@
 - 后续 API 请求会携带 Token
 - Token 可能失效，应用会在需要时自动重新登录获取新 Token
 - 请勿泄露 Token 与导出的账号数据
+
+
+
+<img width="426" alt="image" src="https://raw.githubusercontent.com/Achordchan/garden_city/refs/heads/main/QQ20251218-165835.png">
 
 ### 双接口策略
 为提升稳定性，部分功能采用新旧双接口协作：
