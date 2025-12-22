@@ -2,7 +2,7 @@
 //  SettingsView.swift
 //  tingche
 //
-//  Created by AI Assistant on 2025/9/8.
+//  Created by Achord on 2025/9/8.
 //
 
 import SwiftUI
