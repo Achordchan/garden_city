@@ -1,0 +1,4 @@
+// Configuration settings for the Tingche app
+CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION = YES
+CODE_SIGN_STYLE = Automatic
+CODE_SIGN_IDENTITY = - 

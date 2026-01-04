@@ -1,0 +1,8 @@
+.DS_Store
+build/
+DerivedData/
+*.xcuserstate
+*.xcuserdata/
+
+current_accounts_backup_*.json
+tingche_*backup*.plist
