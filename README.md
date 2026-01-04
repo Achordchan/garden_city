@@ -1,4 +1,4 @@
-# 花园城停车助手 v3
+# 停车助手 v3
 
 一款用于管理账号、查询/兑换停车券、管理车牌号，并支持备份与恢复的 macOS 应用。
 
@@ -25,67 +25,17 @@
 - 基本设置 / 安全与备份 / 高级设置（分段式选项卡）
 - 备份设置：备份目录、自动备份、最大备份文件数、最后备份时间
 - 备份操作：立即备份、查看备份、导入/导出
-- 高级设置：管理员秘钥解锁（秘钥：`Achord666`），并带“危险区”占位扩展
+- 高级设置：管理员秘钥解锁（秘钥：`Achord666`）
 
-### About 作者页
-- 头像展示（AsyncImage）
-- 联系方式（Tel/Email）
-- 底部链接按钮（项目地址/隐私条款/开源协议/赞助）
-- 支持预设文案展示（不可编辑，可复制）
 
-## 架构设计（SwiftUI + 轻量 MVVM）
+<img width="426" alt="image" src="https://raw.githubusercontent.com/Achordchan/garden_city/refs/heads/main/ScreenShot_2025-12-18_165659_344.png">
 
-本项目采用 **SwiftUI + 轻量 MVVM（MVVM-ish）** 的结构化分层，目标是：
-- UI 只负责展示与事件转发
-- 业务状态与动作集中在 ViewModel / Manager
-- 网络请求与本地数据读写隔离成独立层
-
-### 分层职责
-
-#### View（SwiftUI 视图层）
-职责：界面渲染、用户交互、把事件转发给 ViewModel/Manager。
-
-代表文件（示例）：
-- `ContentView.swift` / `SettingsView.swift`
-- `AccountsMainContent.swift` / `ContentToolbar.swift` / `ContentSheets.swift`
-- `Settings*TabView.swift` / `SettingsOverlays.swift`
-
-#### ViewModel（状态编排/动作入口）
-职责：组合界面所需状态、提供页面动作入口、协调多个底层对象。
-
-代表文件：
-- `AccountsViewModel.swift`
-- `SettingsViewModel.swift`
-
-#### Manager / Store（可观察的业务状态与操作）
-职责：持有核心业务数据（账号列表等），提供增删改查与批处理动作。
-
-代表文件：
-- `AccountManager.swift`
-
-#### Service（网络服务层）
-职责：封装所有网络请求，屏蔽 API 细节与请求/响应解析。
-
-代表文件：
-- `APIService.swift`
-
-为了便于测试与替换实现，引入协议抽象：
-- `APIServiceProtocol.swift`
-
-#### Data（本地数据/设置/备份）
-职责：本地持久化（UserDefaults）、设置模型、备份/恢复、文件导入导出。
-
-代表文件：
-- `DataManager.swift`
-- `SettingsFileActions.swift`
-
-### 数据流（简化）
-
-用户操作 -> View -> ViewModel/Manager -> Service/Data -> 更新 Published 状态 -> View 自动刷新
 
 ## 重要说明（请务必阅读）
 
 ### 使用范围与免责声明
+软件内不提供任何账号，请从正规途径取得，并自行寻找获得积分方法！不要来私信问我，恕我无法帮助。
+
 本工具仅用于个人学习与效率提升。除基础的网络请求调用与界面管理外，未进行任何逆向破解行为。
 
 请勿用于任何违规用途。若你下载或使用本项目代码/应用，请在法律与平台规则允许范围内使用。
@@ -97,6 +47,10 @@
 - 后续 API 请求会携带 Token
 - Token 可能失效，应用会在需要时自动重新登录获取新 Token
 - 请勿泄露 Token 与导出的账号数据
+
+
+
+<img width="426" alt="image" src="https://raw.githubusercontent.com/Achordchan/garden_city/refs/heads/main/QQ20251218-165835.png">
 
 ### 双接口策略
 为提升稳定性，部分功能采用新旧双接口协作：
@@ -118,39 +72,9 @@
 - Xcode（建议 Xcode 15 或更高）
 - Swift / SwiftUI
 
-## 本地运行（Debug）
-1. 用 Xcode 打开 `tingche.xcodeproj`
-2. 选择 Scheme 后直接 Run
-
-如果遇到构建问题：
-- Product -> Clean Build Folder
-- 删除派生数据（可选）：`rm -rf ~/Library/Developer/Xcode/DerivedData/tingche-*`
-
-## 打包发布（Release + DMG）
-
-### 1) 生成 .app
-推荐用 Xcode 的 `Product -> Archive` 导出 Release 构建产物（.app）。
-
-### 2) 生成 DMG
-项目外有脚本可用于打包 DMG（普通版/酷炫版）。
-
-酷炫版 DMG 支持：
-- 自定义背景图
-- 图标摆位（App 与 Applications）
-- Finder 窗口样式（隐藏工具栏/路径栏等）
-
-建议将 DMG 作为 GitHub Releases 附件发布，而不是直接提交到仓库（避免仓库被大二进制文件膨胀）。
-
-## 应用改名与图标
-常见需要同时修改：
-- Target -> General -> Display Name
-- Build Settings -> Product Name
-- Assets.xcassets -> AppIcon（务必是 App Icon 类型，且 Target 指向它）
-
 ## 联系方式
 - 作者：Achord
 - Email：achordchan@gmail.com
-- Tel：13160235855
 
 ## TODO
 - 文本格式批量导入（例如：账号-密码-停车券数量-今日是否获取）
