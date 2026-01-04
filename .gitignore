@@ -2,7 +2,8 @@
 build/
 DerivedData/
 *.xcuserstate
-*.xcuserdata/
+xcuserdata/
+*.xcuserdatad/
 
 current_accounts_backup_*.json
 tingche_*backup*.plist
