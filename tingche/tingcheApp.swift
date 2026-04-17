@@ -11,21 +11,30 @@ import SwiftUI
 
 @main
 struct tingcheApp: App {
+    @NSApplicationDelegateAdaptor(AppMenuLocalizer.self) private var appMenuLocalizer
+
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .navigationTitle("花园城停车助手 v3.0 全新出发")  // 设置窗口标题
+        }
+        .commands {
+            AppMenuCommands()
         }
 
-        Window("About", id: "about") {
+        Window("关于", id: "about") {
             AboutView()
         }
         .defaultSize(width: 720, height: 540)
         .windowResizability(.contentSize)
 
-        Window("Logs", id: "logs") {
+        Window("日志", id: "logs") {
             LogsView()
         }
         .defaultSize(width: 920, height: 680)
+
+        Window("获取账号（Beta）", id: "beta-account") {
+            BetaAccountWindowView()
+        }
+        .defaultSize(width: 920, height: 760)
     }
 }

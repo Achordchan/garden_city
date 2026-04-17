@@ -7,14 +7,14 @@ struct AccountsMainContent: View {
 
     var body: some View {
         ZStack {
-            if viewModel.accountManager.accounts.isEmpty {
+            if viewModel.currentSectionAccounts.isEmpty {
                 ContentUnavailableView(
-                    "暂无账号",
-                    systemImage: "person.crop.circle.badge.plus",
-                    description: Text("点击工具栏的“添加账号”开始使用")
+                    viewModel.selectedSection.emptyTitle,
+                    systemImage: viewModel.selectedSection == .main ? "person.crop.circle.badge.plus" : "tray.full",
+                    description: Text(viewModel.selectedSection.emptyDescription)
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if viewModel.displayedAccounts.isEmpty {
+            } else if viewModel.shouldShowFilteredEmptyState {
                 VStack(spacing: 14) {
                     Image(systemName: "checkmark.seal")
                         .font(.system(size: 42, weight: .semibold))
@@ -37,38 +37,67 @@ struct AccountsMainContent: View {
                     .controlSize(.large)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if viewModel.shouldShowNurserySearchEmptyState {
+                ContentUnavailableView(
+                    "未找到匹配账号",
+                    systemImage: "magnifyingglass",
+                    description: Text("试试输入完整手机号，或清空搜索条件")
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                ScrollView {
-                    LazyVGrid(columns: viewModel.gridColumns, spacing: 12) {
-                        ForEach(viewModel.displayedAccounts) { account in
-                            AccountRow(
-                                account: account,
-                                onDelete: {
-                                    viewModel.deleteAccount(account)
-                                },
-                                onRefreshBonus: {
-                                    Task {
-                                        await viewModel.refreshBonus(for: account)
-                                    }
-                                },
-                                onRefreshVoucher: {
-                                    Task {
-                                        await viewModel.refreshVoucherCount(for: account)
-                                    }
-                                },
-                                onExchange: {
-                                    Task {
-                                        await viewModel.exchangeVoucher(for: account)
-                                    }
-                                },
-                                accountManager: viewModel.accountManager,
-                                dataManager: viewModel.dataManager
-                            )
+                if viewModel.selectedSection == .main {
+                    ScrollView {
+                        LazyVGrid(columns: viewModel.gridColumns, spacing: 12) {
+                            ForEach(viewModel.displayedAccounts) { account in
+                                mainAccountView(for: account)
+                            }
                         }
+                        .padding(16)
                     }
-                    .padding(16)
+                } else {
+                    NurseryAccountsListView(viewModel: viewModel)
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private func mainAccountView(for account: AccountInfo) -> some View {
+        AccountRow(
+            account: account,
+            mode: .main,
+            layout: .card,
+            onMoveToNursery: {
+                viewModel.moveAccountToNursery(account)
+            },
+            onMoveToMain: {
+                viewModel.moveNurseryAccountToMain(account)
+            },
+            onDeletePermanently: {
+                viewModel.permanentlyDeleteNurseryAccount(account)
+            },
+            onRefreshBonus: {
+                Task {
+                    await viewModel.refreshBonus(for: account)
+                }
+            },
+            onRefreshVoucher: {
+                Task {
+                    await viewModel.refreshVoucherCount(for: account)
+                }
+            },
+            onExchange: {
+                Task {
+                    await viewModel.exchangeVoucher(for: account)
+                }
+            },
+            onCheckin: {
+                Task {
+                    await viewModel.performCheckin(for: account)
+                }
+            },
+            accountManager: viewModel.accountManager,
+            dataManager: viewModel.dataManager
+        )
     }
 }

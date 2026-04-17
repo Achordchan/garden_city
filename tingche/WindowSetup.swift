@@ -18,9 +18,17 @@ final class MainWindowDelegate: NSObject, NSWindowDelegate {
 
 // 添加一个WindowSetupModifier以控制窗口设置
 struct WindowSetupModifier: ViewModifier {
+    let selectedSection: AccountDisplaySection
+    @Binding var showingNurserySearch: Bool
+    @Binding var nurserySearchQuery: String
+
     func body(content: Content) -> some View {
         content
             .frame(width: 1020)
+            .background(
+                MainWindowChromeBridge()
+                .frame(width: 0, height: 0)
+            )
             .onAppear {
                 setupMainWindow()
             }
@@ -89,7 +97,149 @@ struct WindowSetupModifier: ViewModifier {
 
 // 扩展View以应用修饰符
 extension View {
-    func setupMainWindow() -> some View {
-        self.modifier(WindowSetupModifier())
+    func setupMainWindow(
+        selectedSection: AccountDisplaySection,
+        showingNurserySearch: Binding<Bool>,
+        nurserySearchQuery: Binding<String>
+    ) -> some View {
+        self.modifier(
+            WindowSetupModifier(
+                selectedSection: selectedSection,
+                showingNurserySearch: showingNurserySearch,
+                nurserySearchQuery: nurserySearchQuery
+            )
+        )
+    }
+}
+
+private struct MainWindowChromeBridge: NSViewRepresentable {
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    func makeNSView(context: Context) -> BridgeView {
+        let view = BridgeView()
+        view.coordinator = context.coordinator
+        return view
+    }
+
+    func updateNSView(_ nsView: BridgeView, context: Context) {
+        context.coordinator.attachIfNeeded(to: nsView.window)
+    }
+
+    final class Coordinator: NSObject {
+        weak var window: NSWindow?
+        private var toolbarContextMenuMonitor: Any?
+        private var windowObserver: NSObjectProtocol?
+
+        deinit {
+            if let toolbarContextMenuMonitor {
+                NSEvent.removeMonitor(toolbarContextMenuMonitor)
+            }
+            if let windowObserver {
+                NotificationCenter.default.removeObserver(windowObserver)
+            }
+        }
+
+        func attachIfNeeded(to newWindow: NSWindow?) {
+            guard let newWindow else { return }
+            guard window !== newWindow else { return }
+
+            if let toolbarContextMenuMonitor {
+                NSEvent.removeMonitor(toolbarContextMenuMonitor)
+                self.toolbarContextMenuMonitor = nil
+            }
+            if let windowObserver {
+                NotificationCenter.default.removeObserver(windowObserver)
+                self.windowObserver = nil
+            }
+
+            window = newWindow
+            configureWindow(newWindow)
+            installToolbarContextMenuBlocker(on: newWindow)
+        }
+
+        private func configureWindow(_ window: NSWindow) {
+            window.toolbar?.allowsUserCustomization = false
+            window.toolbar?.autosavesConfiguration = false
+            window.toolbarStyle = .unified
+            window.titleVisibility = .visible
+            window.titlebarAppearsTransparent = false
+        }
+
+        private func installToolbarContextMenuBlocker(on window: NSWindow) {
+            toolbarContextMenuMonitor = NSEvent.addLocalMonitorForEvents(
+                matching: [.rightMouseDown, .leftMouseDown]
+            ) { [weak self, weak window] event in
+                guard let self, let window, event.window === window else {
+                    return event
+                }
+
+                guard self.shouldBlockToolbarContextMenu(for: event, in: window) else {
+                    return event
+                }
+
+                return nil
+            }
+
+            windowObserver = NotificationCenter.default.addObserver(
+                forName: NSWindow.willCloseNotification,
+                object: window,
+                queue: .main
+            ) { [weak self] _ in
+                guard let self else { return }
+                if let toolbarContextMenuMonitor {
+                    NSEvent.removeMonitor(toolbarContextMenuMonitor)
+                    self.toolbarContextMenuMonitor = nil
+                }
+            }
+        }
+
+        private func shouldBlockToolbarContextMenu(for event: NSEvent, in window: NSWindow) -> Bool {
+            let isRightClick = event.type == .rightMouseDown
+            let isControlLeftClick = event.type == .leftMouseDown && event.modifierFlags.contains(.control)
+
+            guard isRightClick || isControlLeftClick else {
+                return false
+            }
+
+            let location = event.locationInWindow
+            let toolbarThreshold = window.contentLayoutRect.maxY
+            guard location.y >= toolbarThreshold else {
+                return false
+            }
+
+            if let titlebarView = window.contentView?.superview {
+                let pointInTitlebar = titlebarView.convert(location, from: nil)
+                let hitView = titlebarView.hitTest(pointInTitlebar)
+                if hitView?.hasAncestor(of: NSSearchField.self) == true {
+                    return false
+                }
+            }
+
+            return true
+        }
+    }
+
+    final class BridgeView: NSView {
+        weak var coordinator: Coordinator?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            coordinator?.attachIfNeeded(to: window)
+        }
+    }
+}
+
+private extension NSView {
+    func hasAncestor(of type: NSView.Type) -> Bool {
+        var current: NSView? = self
+        while let view = current {
+            if view.isKind(of: type) {
+                return true
+            }
+            current = view.superview
+        }
+        return false
     }
 }

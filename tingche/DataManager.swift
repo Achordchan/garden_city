@@ -4,8 +4,7 @@
 //  DataManager.swift
 //  tingche
 //
-//  Created by AI Assistant on 2025/9/8.
-//
+
 
 import Foundation
 import SwiftUI
@@ -18,10 +17,22 @@ struct AppSettings: Codable {
     var maxBackupFiles: Int
     var licensePlates: [String] // 车牌号列表
     var selectedLicensePlate: String // 当前选中的车牌号
+    var mockParkingRightsForParkingView: Bool
     var selectedMaxCount: Int
     var exchangeCount: Int
     var exchangeMid: String
     var exchangeGid: String
+    var forceExchangeAccountId: String?
+    var forceExchangeCardLevel: Int?
+    var forceExchangeCardTitle: String?
+    var betaSMSReceiverSignature: String
+    var betaHaozhuServerURL: String
+    var betaHaozhuAPIUser: String
+    var betaHaozhuAPIPassword: String
+    var betaHaozhuToken: String
+    var betaHaozhuProjectID: String
+    var autoCheckinTargetMallID: Int?
+    var autoCheckinTargetMallName: String?
     
     init() {
         self.backupLocation = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.path ?? ""
@@ -30,10 +41,22 @@ struct AppSettings: Codable {
         self.maxBackupFiles = 10 // 最多保留10个备份文件
         self.licensePlates = ["苏FC035N7"] // 默认车牌号
         self.selectedLicensePlate = "苏FC035N7" // 默认选中第一个
+        self.mockParkingRightsForParkingView = false
         self.selectedMaxCount = 10
         self.exchangeCount = 1
         self.exchangeMid = "11992"
         self.exchangeGid = "1007561"
+        self.forceExchangeAccountId = nil
+        self.forceExchangeCardLevel = nil
+        self.forceExchangeCardTitle = nil
+        self.betaSMSReceiverSignature = ""
+        self.betaHaozhuServerURL = ""
+        self.betaHaozhuAPIUser = ""
+        self.betaHaozhuAPIPassword = ""
+        self.betaHaozhuToken = ""
+        self.betaHaozhuProjectID = ""
+        self.autoCheckinTargetMallID = nil
+        self.autoCheckinTargetMallName = nil
     }
 
     enum CodingKeys: String, CodingKey {
@@ -43,10 +66,22 @@ struct AppSettings: Codable {
         case maxBackupFiles
         case licensePlates
         case selectedLicensePlate
+        case mockParkingRightsForParkingView
         case selectedMaxCount
         case exchangeCount
         case exchangeMid
         case exchangeGid
+        case forceExchangeAccountId
+        case forceExchangeCardLevel
+        case forceExchangeCardTitle
+        case betaSMSReceiverSignature
+        case betaHaozhuServerURL
+        case betaHaozhuAPIUser
+        case betaHaozhuAPIPassword
+        case betaHaozhuToken
+        case betaHaozhuProjectID
+        case autoCheckinTargetMallID
+        case autoCheckinTargetMallName
     }
 
     init(from decoder: Decoder) throws {
@@ -60,10 +95,22 @@ struct AppSettings: Codable {
         self.maxBackupFiles = try container.decodeIfPresent(Int.self, forKey: .maxBackupFiles) ?? 10
         self.licensePlates = try container.decodeIfPresent([String].self, forKey: .licensePlates) ?? ["苏FC035N7"]
         self.selectedLicensePlate = try container.decodeIfPresent(String.self, forKey: .selectedLicensePlate) ?? (self.licensePlates.first ?? "苏FC035N7")
+        self.mockParkingRightsForParkingView = try container.decodeIfPresent(Bool.self, forKey: .mockParkingRightsForParkingView) ?? false
         self.selectedMaxCount = try container.decodeIfPresent(Int.self, forKey: .selectedMaxCount) ?? 10
         self.exchangeCount = try container.decodeIfPresent(Int.self, forKey: .exchangeCount) ?? 1
         self.exchangeMid = try container.decodeIfPresent(String.self, forKey: .exchangeMid) ?? "11992"
         self.exchangeGid = try container.decodeIfPresent(String.self, forKey: .exchangeGid) ?? "1007561"
+        self.forceExchangeAccountId = try container.decodeIfPresent(String.self, forKey: .forceExchangeAccountId)
+        self.forceExchangeCardLevel = try container.decodeIfPresent(Int.self, forKey: .forceExchangeCardLevel)
+        self.forceExchangeCardTitle = try container.decodeIfPresent(String.self, forKey: .forceExchangeCardTitle)
+        self.betaSMSReceiverSignature = try container.decodeIfPresent(String.self, forKey: .betaSMSReceiverSignature) ?? ""
+        self.betaHaozhuServerURL = try container.decodeIfPresent(String.self, forKey: .betaHaozhuServerURL) ?? ""
+        self.betaHaozhuAPIUser = try container.decodeIfPresent(String.self, forKey: .betaHaozhuAPIUser) ?? ""
+        self.betaHaozhuAPIPassword = try container.decodeIfPresent(String.self, forKey: .betaHaozhuAPIPassword) ?? ""
+        self.betaHaozhuToken = try container.decodeIfPresent(String.self, forKey: .betaHaozhuToken) ?? ""
+        self.betaHaozhuProjectID = try container.decodeIfPresent(String.self, forKey: .betaHaozhuProjectID) ?? ""
+        self.autoCheckinTargetMallID = try container.decodeIfPresent(Int.self, forKey: .autoCheckinTargetMallID)
+        self.autoCheckinTargetMallName = try container.decodeIfPresent(String.self, forKey: .autoCheckinTargetMallName)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -74,10 +121,22 @@ struct AppSettings: Codable {
         try container.encode(maxBackupFiles, forKey: .maxBackupFiles)
         try container.encode(licensePlates, forKey: .licensePlates)
         try container.encode(selectedLicensePlate, forKey: .selectedLicensePlate)
+        try container.encode(mockParkingRightsForParkingView, forKey: .mockParkingRightsForParkingView)
         try container.encode(selectedMaxCount, forKey: .selectedMaxCount)
         try container.encode(exchangeCount, forKey: .exchangeCount)
         try container.encode(exchangeMid, forKey: .exchangeMid)
         try container.encode(exchangeGid, forKey: .exchangeGid)
+        try container.encodeIfPresent(forceExchangeAccountId, forKey: .forceExchangeAccountId)
+        try container.encodeIfPresent(forceExchangeCardLevel, forKey: .forceExchangeCardLevel)
+        try container.encodeIfPresent(forceExchangeCardTitle, forKey: .forceExchangeCardTitle)
+        try container.encode(betaSMSReceiverSignature, forKey: .betaSMSReceiverSignature)
+        try container.encode(betaHaozhuServerURL, forKey: .betaHaozhuServerURL)
+        try container.encode(betaHaozhuAPIUser, forKey: .betaHaozhuAPIUser)
+        try container.encode(betaHaozhuAPIPassword, forKey: .betaHaozhuAPIPassword)
+        try container.encode(betaHaozhuToken, forKey: .betaHaozhuToken)
+        try container.encode(betaHaozhuProjectID, forKey: .betaHaozhuProjectID)
+        try container.encodeIfPresent(autoCheckinTargetMallID, forKey: .autoCheckinTargetMallID)
+        try container.encodeIfPresent(autoCheckinTargetMallName, forKey: .autoCheckinTargetMallName)
     }
 }
 
@@ -134,6 +193,8 @@ struct BackupFileInfo: Identifiable, Codable {
 
 // MARK: - 数据管理器
 class DataManager: ObservableObject {
+    static let shared = DataManager()
+
     @Published var settings: AppSettings = AppSettings()
     @Published var deletedAccounts: [DeletedAccountRecord] = []
     @Published var backupFiles: [BackupFileInfo] = []
@@ -258,7 +319,7 @@ class DataManager: ObservableObject {
     }
     
     // MARK: - 备份功能
-    func createBackup(accounts: [AccountInfo]) async -> Bool {
+    func createBackup(accounts: [AccountInfo], nurseryAccounts: [AccountInfo] = []) async -> Bool {
         await MainActor.run {
             isBackingUp = true
         }
@@ -317,6 +378,7 @@ class DataManager: ObservableObject {
             // 创建备份数据
             let backupData = BackupData(
                 accounts: accounts,
+                nurseryAccounts: nurseryAccounts,
                 deletedAccounts: deletedAccounts,
                 createdAt: Date(),
                 appVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
@@ -331,7 +393,7 @@ class DataManager: ObservableObject {
                 fileName: fileName,
                 filePath: fileURL.path,
                 fileSize: fileSize,
-                accountCount: accounts.count
+                accountCount: accounts.count + nurseryAccounts.count
             )
             
             await MainActor.run {
@@ -347,7 +409,7 @@ class DataManager: ObservableObject {
             
             print("备份创建成功: \(fileURL.path)")
             print("备份文件大小: \(fileSize) 字节")
-            print("备份账号数量: \(accounts.count)")
+            print("备份账号数量: \(accounts.count + nurseryAccounts.count)")
             return true
             
         } catch {
@@ -452,9 +514,13 @@ class DataManager: ObservableObject {
     }
     
     // MARK: - 导出功能
-    func exportAccounts(_ accounts: [AccountInfo], to url: URL) -> Bool {
+    func exportAccounts(mainAccounts: [AccountInfo], nurseryAccounts: [AccountInfo], to url: URL) -> Bool {
         do {
-            let data = try JSONEncoder().encode(accounts)
+            let transferData = AccountTransferData(
+                mainAccounts: mainAccounts,
+                nurseryAccounts: nurseryAccounts
+            )
+            let data = try JSONEncoder().encode(transferData)
             try data.write(to: url)
             return true
         } catch {
@@ -463,11 +529,15 @@ class DataManager: ObservableObject {
         }
     }
     
-    func importAccounts(from url: URL) -> [AccountInfo]? {
+    func importAccounts(from url: URL) -> AccountTransferData? {
         do {
             let data = try Data(contentsOf: url)
-            let accounts = try JSONDecoder().decode([AccountInfo].self, from: data)
-            return accounts
+            if let transferData = try? JSONDecoder().decode(AccountTransferData.self, from: data) {
+                return transferData
+            }
+
+            let legacyAccounts = try JSONDecoder().decode([AccountInfo].self, from: data)
+            return AccountTransferData(mainAccounts: legacyAccounts, nurseryAccounts: [])
         } catch {
             print("导入账号失败: \(error.localizedDescription)")
             return nil
@@ -497,9 +567,10 @@ class DataManager: ObservableObject {
         ) { [weak self] notification in
             guard let self = self,
                   let accounts = notification.object as? [AccountInfo] else { return }
+            let nurseryAccounts = notification.userInfo?["nurseryAccounts"] as? [AccountInfo] ?? []
             
             Task {
-                let success = await self.createBackup(accounts: accounts)
+                let success = await self.createBackup(accounts: accounts, nurseryAccounts: nurseryAccounts)
                 if success {
                     print("自动备份完成")
                 } else {
@@ -546,14 +617,24 @@ class DataManager: ObservableObject {
     func getEncodedSelectedLicensePlate() -> String {
         return settings.selectedLicensePlate.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? settings.selectedLicensePlate
     }
+
+    func getEncodedLicensePlateForParkingView() -> String {
+        return getEncodedSelectedLicensePlate()
+    }
 }
 
 // MARK: - 备份数据模型
 struct BackupData: Codable {
     let accounts: [AccountInfo]
+    let nurseryAccounts: [AccountInfo]?
     let deletedAccounts: [DeletedAccountRecord]
     let createdAt: Date
     let appVersion: String
+}
+
+struct AccountTransferData: Codable {
+    let mainAccounts: [AccountInfo]
+    let nurseryAccounts: [AccountInfo]
 }
 
 // MARK: - 通知名称
@@ -561,6 +642,7 @@ extension Notification.Name {
     static let autoBackupTriggered = Notification.Name("autoBackupTriggered")
     static let performAutoBackup = Notification.Name("performAutoBackup")
     static let accountDeleted = Notification.Name("accountDeleted")
+    static let accountsStorageDidChange = Notification.Name("accountsStorageDidChange")
 }
 
 // MARK: - 日期格式化器

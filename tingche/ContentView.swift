@@ -15,18 +15,22 @@ struct ContentView: View {
     @State private var showingAddAccount = false
     @State private var showingSettings = false
     @State private var showingPlateManager = false
+    @State private var showingParkingFeeQuery = false
+    @State private var showingNurserySearch = false
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         NavigationStack {
             AccountsMainContent(viewModel: viewModel)
-            .navigationTitle("花园城停车助手 V3.0")
+            .navigationTitle("花园城停车助手 V3.1")
             .toolbar {
                 ContentToolbar(
                     viewModel: viewModel,
                     showingAddAccount: $showingAddAccount,
                     showingSettings: $showingSettings,
-                    showingPlateManager: $showingPlateManager
+                    showingPlateManager: $showingPlateManager,
+                    showingParkingFeeQuery: $showingParkingFeeQuery,
+                    showingNurserySearch: $showingNurserySearch
                 )
             }
         }
@@ -34,7 +38,8 @@ struct ContentView: View {
             viewModel: viewModel,
             showingAddAccount: $showingAddAccount,
             showingSettings: $showingSettings,
-            showingPlateManager: $showingPlateManager
+            showingPlateManager: $showingPlateManager,
+            showingParkingFeeQuery: $showingParkingFeeQuery
         )
         .overlay(alignment: .top) {
             ToastOverlayView(
@@ -48,21 +53,34 @@ struct ContentView: View {
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             StatusBarView(
-                accountCount: viewModel.accountCount,
-                totalBonus: viewModel.totalBonus,
-                totalVouchers: viewModel.totalVouchers,
+                sectionTitle: viewModel.selectedSection.title,
+                accountCount: viewModel.currentSectionAccountCount,
+                totalBonus: viewModel.currentSectionTotalBonus,
+                totalVouchers: viewModel.currentSectionTotalVouchers,
                 onAbout: {
                     openWindow(id: "about")
-                }
+                },
+                accountManager: viewModel.accountManager
             )
         }
-        .setupMainWindow()
+        .setupMainWindow(
+            selectedSection: viewModel.selectedSection,
+            showingNurserySearch: $showingNurserySearch,
+            nurserySearchQuery: $viewModel.nurserySearchQuery
+        )
         .onAppear {
-            // 在应用启动时创建初始备份
+            viewModel.startBackgroundServicesIfNeeded()
             Task {
                 await viewModel.createInitialBackupIfNeeded()
             }
         }
+        .onChange(of: viewModel.selectedSection) { _, newValue in
+            guard newValue != .nursery else { return }
+            showingNurserySearch = false
+            viewModel.resetNurserySearch()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .openSettingsFromMenu)) { _ in
+            showingSettings = true
+        }
     }
 }
-

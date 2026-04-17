@@ -7,14 +7,17 @@ import UniformTypeIdentifiers
 struct SettingsFileActions {
     static func createManualBackup(dataManager: DataManager, accountManager: AccountManager) async {
         // 检查是否有账号数据
-        guard !accountManager.accounts.isEmpty else {
+        guard !accountManager.accounts.isEmpty || !accountManager.nurseryAccounts.isEmpty else {
             accountManager.showToast("没有账号数据需要备份", type: .info)
             return
         }
 
-        let success = await dataManager.createBackup(accounts: accountManager.accounts)
+        let success = await dataManager.createBackup(
+            accounts: accountManager.accounts,
+            nurseryAccounts: accountManager.nurseryAccounts
+        )
         if success {
-            let accountCount = accountManager.accounts.count
+            let accountCount = accountManager.accounts.count + accountManager.nurseryAccounts.count
             accountManager.showToast("备份创建成功！已备份 \(accountCount) 个账号", type: .success)
         } else {
             accountManager.showToast("备份创建失败，请检查文件权限和存储空间", type: .error)
@@ -28,7 +31,11 @@ struct SettingsFileActions {
 
         panel.begin { response in
             if response == .OK, let url = panel.url {
-                let success = dataManager.exportAccounts(accountManager.accounts, to: url)
+                let success = dataManager.exportAccounts(
+                    mainAccounts: accountManager.accounts,
+                    nurseryAccounts: accountManager.nurseryAccounts,
+                    to: url
+                )
                 if success {
                     accountManager.showToast("导出成功", type: .success)
                 } else {
@@ -45,18 +52,24 @@ struct SettingsFileActions {
 
         panel.begin { response in
             if response == .OK, let url = panel.urls.first {
-                if let importedAccounts = dataManager.importAccounts(from: url) {
-                    // 过滤已存在的账号
-                    let newAccounts = importedAccounts.filter { importedAccount in
-                        !accountManager.accounts.contains { existingAccount in
-                            existingAccount.username == importedAccount.username
-                        }
+                if let importedData = dataManager.importAccounts(from: url) {
+                    var knownUsernames = Set(accountManager.allManagedAccounts().map(\.username))
+                    let newMainAccounts = importedData.mainAccounts.filter { importedAccount in
+                        knownUsernames.insert(importedAccount.username).inserted
+                    }
+                    let newNurseryAccounts = importedData.nurseryAccounts.filter { importedAccount in
+                        knownUsernames.insert(importedAccount.username).inserted
                     }
 
-                    accountManager.accounts.append(contentsOf: newAccounts)
+                    let insertedMainCount = accountManager.insertAccountsIntoMain(newMainAccounts, markAsNew: true)
+                    let insertedNurseryCount = accountManager.insertAccountsIntoNursery(newNurseryAccounts)
                     accountManager.saveAccounts()
+                    accountManager.saveNurseryAccounts()
 
-                    accountManager.showToast("成功导入 \(newAccounts.count) 个新账号", type: .success)
+                    accountManager.showToast(
+                        "成功导入 \(insertedMainCount) 个主账号，\(insertedNurseryCount) 个养号账号",
+                        type: .success
+                    )
                 } else {
                     accountManager.showToast("导入失败，请检查文件格式", type: .error)
                 }
@@ -67,9 +80,11 @@ struct SettingsFileActions {
     static func restoreFromBackup(dataManager: DataManager, accountManager: AccountManager, backupFile: BackupFileInfo) {
         if let backupData = dataManager.restoreFromBackup(backupFile) {
             accountManager.accounts = backupData.accounts
+            accountManager.nurseryAccounts = backupData.nurseryAccounts ?? []
             dataManager.deletedAccounts = backupData.deletedAccounts
 
             accountManager.saveAccounts()
+            accountManager.saveNurseryAccounts()
             dataManager.saveDeletedAccounts()
 
             accountManager.showToast("备份恢复成功", type: .success)

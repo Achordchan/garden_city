@@ -1,6 +1,10 @@
 .DS_Store
 build/
 DerivedData/
+.analysis/
+.deriveddata/
+.playwright-cli/
+tingche/QA/
 *.xcuserstate
 xcuserdata/
 *.xcuserdatad/

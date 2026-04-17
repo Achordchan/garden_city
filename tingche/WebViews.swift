@@ -4,6 +4,22 @@ import SwiftUI
 import WebKit
 import AppKit
 
+@MainActor
+enum ParkingDetailWindowPresenter {
+    private static var activeControllers: [UUID: WebViewWindowController] = [:]
+
+    static func present(account: AccountInfo, dataManager: DataManager, onClose: (() -> Void)? = nil) {
+        let retainID = UUID()
+        let controller = WebViewWindowController(account: account, dataManager: dataManager) {
+            activeControllers.removeValue(forKey: retainID)
+            onClose?()
+        }
+        activeControllers[retainID] = controller
+        controller.window?.delegate = controller
+        controller.showWindow(nil)
+    }
+}
+
 // 修改 WebViewWindowController
 class WebViewWindowController: NSWindowController, NSWindowDelegate {
     private var coordinator: WebViewCoordinator
@@ -40,7 +56,12 @@ class WebViewWindowController: NSWindowController, NSWindowDelegate {
         coordinator.webView = webView
 
         // 设置拦截器
-        coordinator.setupInterception(selectedMaxCount: dataManager.settings.selectedMaxCount)
+        coordinator.setupInterception(
+            selectedMaxCount: dataManager.settings.selectedMaxCount,
+            displayPlate: dataManager.settings.selectedLicensePlate,
+            mockEnabled: dataManager.settings.mockParkingRightsForParkingView,
+            token: account.token
+        )
 
         // 设置 cookies
         let cookies = createCookies(for: account)
@@ -48,8 +69,8 @@ class WebViewWindowController: NSWindowController, NSWindowDelegate {
             webView.configuration.websiteDataStore.httpCookieStore.setCookie(cookie)
         }
 
-        // 创建请求，使用选中的车牌号
-        let encodedPlate = dataManager.getEncodedSelectedLicensePlate()
+        // 创建请求
+        let encodedPlate = dataManager.getEncodedLicensePlateForParkingView()
         let parkingURL = "https://m-bms.cmsk1979.com/v/park/parkFee/feeDetails?pid=1256&plate=\(encodedPlate)&barcode=&carInputType=0&mid=11992"
         let url = URL(string: parkingURL)!
         var request = URLRequest(url: url)
@@ -215,22 +236,351 @@ class WebViewWindowController: NSWindowController, NSWindowDelegate {
 }
 
 // WebViewCoordinator 添加拦截和修改网络响应的功能
-class WebViewCoordinator: NSObject, WKNavigationDelegate, ObservableObject {
+class WebViewCoordinator: NSObject, WKNavigationDelegate, ObservableObject, WKScriptMessageHandler {
     weak var webView: WKWebView?
 
     // 在 webView 设置后添加拦截脚本
-    func setupInterception(selectedMaxCount: Int) {
+    func setupInterception(selectedMaxCount: Int, displayPlate: String, mockEnabled: Bool, token: String?) {
         guard let webView = webView else { return }
+        let mockEnabledLiteral = mockEnabled ? "true" : "false"
+        let tokenLiteral = token.map { "\"\($0)\"" } ?? "null"
+
+        webView.configuration.userContentController.removeScriptMessageHandler(forName: "tingcheLog")
+        webView.configuration.userContentController.add(self, name: "tingcheLog")
 
         // 创建拦截 XHR 响应的 JavaScript 脚本
         let script = """
         (function() {
+            const __tcDisplayPlate = "\(displayPlate)";
+            const __tcMockEnabled = \(mockEnabledLiteral);
+            const __tcToken = \(tokenLiteral);
+            const __tcSelectedMaxCount = \(selectedMaxCount);
+
+            let __tcLastOpenUrl = '';
+
+            function __tcPostLog(level, message, url, extra) {
+                try {
+                    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.tingcheLog) {
+                        window.webkit.messageHandlers.tingcheLog.postMessage({
+                            level: String(level || 'info'),
+                            message: String(message || ''),
+                            url: String(url || ''),
+                            extra: extra || null
+                        });
+                    }
+                } catch (e) {}
+            }
+
+            __tcPostLog('info', 'interceptor installed', '', { displayPlate: __tcDisplayPlate, mockEnabled: __tcMockEnabled, hasToken: !!__tcToken });
+
+            const __tcOriginalStringify = JSON.stringify;
+
+            function __tcNormalizeBase64(input) {
+                if (typeof input !== 'string') return '';
+                let s = input.trim();
+                s = s.replace(/\\s+/g, '');
+                s = s.replace(/-/g, '+').replace(/_/g, '/');
+                const pad = s.length % 4;
+                if (pad === 2) s += '==';
+                else if (pad === 3) s += '=';
+                else if (pad === 1) s = s + '===';
+                return s;
+            }
+
+            function __tcTryDecodeBase64Json(input) {
+                try {
+                    const decoded = atob(__tcNormalizeBase64(input));
+                    if (!decoded) return null;
+                    const t = decoded.trim();
+                    if (!(t.startsWith('{') || t.startsWith('['))) return null;
+                    return JSON.parse(decoded);
+                } catch (e) {
+                    return null;
+                }
+            }
+
+            function __tcLogQueryEnResponse(url, responseText) {
+                try {
+                    if (!__tcIsQueryEn(url)) return;
+                    if (typeof responseText !== 'string' || responseText.length === 0) return;
+                    const obj = JSON.parse(responseText);
+                    const d = obj && (obj.d || obj.D || obj.data || obj.Data) ? (obj.d || obj.D || obj.data || obj.Data) : null;
+                    const list = d && (d.RightsRuleModelList || d.rightsRuleModelList) ? (d.RightsRuleModelList || d.rightsRuleModelList) : null;
+                    if (!Array.isArray(list)) return;
+
+                    const summary = [];
+                    for (let i = 0; i < list.length; i++) {
+                        const item = list[i] || {};
+                        const ruleName = item.RuleName || item.ruleName || '';
+                        const status = (item.Status != null) ? item.Status : item.status;
+                        const tips = item.ListTips || item.listTips || '';
+                        const showType = (item.ShowType != null) ? item.ShowType : item.showType;
+                        const rights = item.RightsList || item.rightsList;
+                        const rightsCount = Array.isArray(rights) ? rights.length : null;
+                        if (ruleName || tips || status != null) {
+                            summary.push({ ruleName: String(ruleName), status: status, listTips: String(tips), showType: showType, rightsCount: rightsCount });
+                        }
+                    }
+                    __tcPostLog('info', 'QueryEn response summary', url, { traceId: __tcQueryEnTraceId, rules: summary });
+                } catch (e) {
+                    // ignore
+                }
+            }
+
+            function __tcMaybeMockQueryEnResponse(url, responseText) {
+                try {
+                    if (!__tcMockEnabled) return null;
+                    if (!__tcIsQueryEn(url)) return null;
+                    if (typeof responseText !== 'string' || responseText.length === 0) return null;
+
+                    const obj = JSON.parse(responseText);
+                    const d = obj && (obj.d || obj.D || obj.data || obj.Data) ? (obj.d || obj.D || obj.data || obj.Data) : null;
+                    const listKey = d && d.RightsRuleModelList ? 'RightsRuleModelList' : (d && d.rightsRuleModelList ? 'rightsRuleModelList' : null);
+                    if (!d || !listKey || !Array.isArray(d[listKey])) return null;
+
+                    const rules = d[listKey];
+                    let mallRule = null;
+                    for (let i = 0; i < rules.length; i++) {
+                        const r = rules[i];
+                        const ruleName = String((r && (r.RuleName || r.ruleName)) || '');
+                        if (ruleName.indexOf('商场停车券') >= 0) {
+                            mallRule = r;
+                            break;
+                        }
+                    }
+                    if (!mallRule || typeof mallRule !== 'object') return null;
+
+                    const tips = String(mallRule.ListTips || mallRule.listTips || '');
+                    const status = (mallRule.Status != null) ? mallRule.Status : mallRule.status;
+                    const hasLimit = (tips.indexOf('已达使用上限') >= 0) || (tips.indexOf('每日权益') >= 0) || (status === false);
+
+                    const beforeRights = mallRule.RightsList || mallRule.rightsList;
+                    const beforeCount = (beforeRights && beforeRights.length != null) ? beforeRights.length : null;
+                    const beforeShowType = (mallRule.ShowType != null) ? mallRule.ShowType : mallRule.showType;
+
+                    let rightsToUse = null;
+                    let source = null;
+                    try {
+                        const cached = localStorage.getItem('tingche_qe_cache_mall_rights_v1');
+                        if (cached) {
+                            const cachedList = JSON.parse(cached);
+                            if (Array.isArray(cachedList) && cachedList.length > 0) {
+                                rightsToUse = cachedList;
+                                source = 'real_api_or_queryen_cache';
+                            }
+                        }
+                    } catch (e) {}
+
+                    const src2 = localStorage.getItem('tingche_qe_cache_mall_source_v1');
+
+                    // If real_api cache exists, never overwrite it with QueryEn's own list.
+                    if (!rightsToUse && !hasLimit) {
+                        try {
+                            if (src2 !== 'real_api') {
+                                const rights = mallRule.RightsList || mallRule.rightsList;
+                                if (Array.isArray(rights) && rights.length > 0) {
+                                    localStorage.setItem('tingche_qe_cache_mall_rights_v1', __tcOriginalStringify(rights));
+                                    localStorage.setItem('tingche_qe_cache_mall_time_v1', String(Date.now()));
+                                    localStorage.setItem('tingche_qe_cache_mall_source_v1', 'queryen');
+                                    __tcPostLog('info', 'QueryEn cached mall rights list', url, { traceId: __tcQueryEnTraceId, count: rights.length, source: 'queryen' });
+                                }
+                            }
+                        } catch (e) {}
+                    }
+
+                    if (!rightsToUse) {
+                        __tcPostLog('warn', 'QueryEn mock enabled but no cached mall rights (real api)', url, { traceId: __tcQueryEnTraceId });
+                        return null;
+                    }
+
+                    // Hard override: create/overwrite the fields unconditionally so UI can't miss it.
+                    mallRule.RightsList = rightsToUse;
+                    mallRule.rightsList = rightsToUse;
+                    mallRule.ShowType = 2;
+                    mallRule.showType = 2;
+                    mallRule.ListTips = '请选择，' + String(rightsToUse.length) + '张券待使用（Mock）';
+                    mallRule.listTips = mallRule.ListTips;
+                    mallRule.SelectedMaxCount = __tcSelectedMaxCount;
+                    mallRule.selectedMaxCount = __tcSelectedMaxCount;
+                    mallRule.PanelTips = '每日可使用' + String(__tcSelectedMaxCount) + '张停车券 -Achord';
+                    mallRule.panelTips = mallRule.PanelTips;
+                    mallRule.Status = true;
+                    mallRule.status = true;
+                    mallRule.IsShow = true;
+                    mallRule.isShow = true;
+
+                    const t = localStorage.getItem('tingche_qe_cache_mall_time_v1');
+                    __tcPostLog('info', 'QueryEn mock applied (mall parking) ', url, { traceId: __tcQueryEnTraceId, hasLimit: hasLimit, source: src2 || source || null, cachedAt: t || null, beforeCount: beforeCount, beforeShowType: beforeShowType, afterCount: (rightsToUse && rightsToUse.length != null) ? rightsToUse.length : null, afterShowType: 2 });
+                    return __tcOriginalStringify(obj);
+                } catch (e) {
+                    return null;
+                }
+            }
+
+            function __tcBuildRightsItemFromCouponItem(it) {
+                try {
+                    if (!it || typeof it !== 'object') return null;
+                    const name = String(it.Name || '停车券');
+                    const vcode = (it.VCode != null) ? String(it.VCode) : '';
+                    const ruleNo = (it.RuleNo != null) ? String(it.RuleNo) : '';
+                    const enableTime = (it.EnableTime != null) ? String(it.EnableTime) : '';
+                    const overdueTime = (it.OverdueTime != null) ? String(it.OverdueTime) : '';
+                    const id = vcode || (ruleNo ? (ruleNo + '_' + enableTime + '_' + overdueTime) : String(it.CouponID || ''));
+                    let amount = 0;
+                    if (it.InsteadMoney != null) {
+                        const v = Number(it.InsteadMoney);
+                        if (!isNaN(v)) amount = Math.round(v * 100);
+                    }
+                    if (!amount && name.indexOf('2小时') >= 0) amount = 1000;
+                    if (!amount && name.indexOf('1小时') >= 0) amount = 500;
+                    if (!amount) amount = 500;
+                    return {
+                        RuleShowType: 0,
+                        OrderRecord: '3',
+                        RightsID: id,
+                        RightsName: name,
+                        RightsType: 0,
+                        Amount: amount,
+                        AllowanceAmount: 0,
+                        Minutes: 0,
+                        IsIntellegent: false
+                    };
+                } catch (e) {
+                    return null;
+                }
+            }
+
+            function __tcPrefetchMallRightsFromRealAPI() {
+                try {
+                    if (!__tcMockEnabled) return;
+                    if (!__tcToken) {
+                        __tcPostLog('warn', 'mock enabled but token missing for coupon prefetch', '', {});
+                        return;
+                    }
+
+                    const body = {
+                        MinID: 0,
+                        PageSize: 999,
+                        MallID: '11992',
+                        Header: { Token: __tcToken }
+                    };
+
+                    const endpoints = [
+                        'https://m-bms.cmsk1979.com/a/coupon/API/mycoupon/GetNotAboutToExpireCoupon',
+                        'https://m-bms.cmsk1979.com/a/coupon/API/mycoupon/GetAboutToExpireCoupon'
+                    ];
+
+                    function fetchOne(url) {
+                        return fetch(url, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Accept': 'application/json, text/plain, */*',
+                                'Origin': 'https://m-bms.cmsk1979.com',
+                                'Referer': 'https://m-bms.cmsk1979.com/v/coupon/mycoupon/index?mid=11992'
+                            },
+                            body: __tcOriginalStringify(body)
+                        }).then(function(r) {
+                            return r.text().then(function(t) {
+                                try {
+                                    return JSON.parse(t);
+                                } catch (e) {
+                                    return null;
+                                }
+                            });
+                        }).catch(function() {
+                            return null;
+                        });
+                    }
+
+                    Promise.all([fetchOne(endpoints[0]), fetchOne(endpoints[1])]).then(function(arr) {
+                        try {
+                            let all = [];
+                            for (let i = 0; i < arr.length; i++) {
+                                const o = arr[i];
+                                if (o && o.m === 1 && Array.isArray(o.d)) {
+                                    all = all.concat(o.d);
+                                }
+                            }
+
+                            const useStateCounts = {};
+                            for (let i = 0; i < all.length; i++) {
+                                const it = all[i];
+                                const s = (it && it.UseState != null) ? String(it.UseState) : 'null';
+                                useStateCounts[s] = (useStateCounts[s] || 0) + 1;
+                            }
+                            __tcPostLog('info', 'real coupon api fetched', '', { total: all.length, useStateCounts: useStateCounts });
+
+                            const rights = [];
+                            const seen = {};
+                            for (let i = 0; i < all.length; i++) {
+                                const it = all[i];
+                                const name = String((it && it.Name) || '');
+                                if (name.indexOf('停车券') < 0) continue;
+                                const us = (it && it.UseState != null) ? Number(it.UseState) : null;
+                                if (us != null && us !== 1 && us !== 3) continue;
+                                const r = __tcBuildRightsItemFromCouponItem(it);
+                                if (!r || !r.RightsID) continue;
+                                if (seen[r.RightsID]) continue;
+                                seen[r.RightsID] = true;
+                                rights.push(r);
+                            }
+
+                            if (rights.length > 0) {
+                                localStorage.setItem('tingche_qe_cache_mall_rights_v1', __tcOriginalStringify(rights));
+                                localStorage.setItem('tingche_qe_cache_mall_time_v1', String(Date.now()));
+                                localStorage.setItem('tingche_qe_cache_mall_source_v1', 'real_api');
+                                __tcPostLog('info', 'prefetched mall rights from real coupon api', '', { count: rights.length, total: all.length });
+                            } else {
+                                __tcPostLog('warn', 'real coupon api returned no usable parking vouchers', '', { total: all.length });
+                            }
+                        } catch (e) {
+                            __tcPostLog('warn', 'prefetch mall rights failed', '', { err: String(e) });
+                        }
+                    });
+                } catch (e) {}
+            }
+
+            try {
+                setTimeout(function() {
+                    try {
+                        __tcPrefetchMallRightsFromRealAPI();
+                    } catch (e) {}
+                }, 600);
+            } catch (e) {}
+
+            function __tcIsQueryEn(url) {
+                if (!url || typeof url !== 'string') return false;
+                // Only target the discount endpoint we are testing.
+                if (url.includes('/api/discount/DiscountCore/QueryEn')) return true;
+                if (url.includes('DiscountCore/QueryEn')) return true;
+                return false;
+            }
+
+            let __tcQueryEnTraceId = '';
+            let __tcLoggedDataWrapperForTrace = false;
+
             let originalOpen = XMLHttpRequest.prototype.open;
             let originalSend = XMLHttpRequest.prototype.send;
+            let originalSetRequestHeader = XMLHttpRequest.prototype.setRequestHeader;
 
             XMLHttpRequest.prototype.open = function(method, url) {
                 this._url = url;
+                __tcLastOpenUrl = url || '';
+                this._tcHeaders = {};
+                if (__tcIsQueryEn(url || '')) {
+                    __tcQueryEnTraceId = String(Date.now()) + '_' + String(Math.random()).slice(2);
+                    __tcLoggedDataWrapperForTrace = false;
+                }
                 return originalOpen.apply(this, arguments);
+            };
+
+            XMLHttpRequest.prototype.setRequestHeader = function(name, value) {
+                try {
+                    if (!this._tcHeaders) this._tcHeaders = {};
+                    this._tcHeaders[String(name || '').toLowerCase()] = String(value || '');
+                } catch (e) {}
+                return originalSetRequestHeader.apply(this, arguments);
             };
 
             XMLHttpRequest.prototype.send = function() {
@@ -242,12 +592,31 @@ class WebViewCoordinator: NSObject, WKNavigationDelegate, ObservableObject {
                         // 当响应完成时
                         try {
                             let responseText = xhr.responseText;
-                            if (responseText && responseText.includes('\"SelectedMaxCount\":')) {
-                                // 替换 SelectedMaxCount 值
-                                let modifiedResponse = responseText.replace(/\"SelectedMaxCount\":\\d+/g, '\"SelectedMaxCount\":\(selectedMaxCount)');
-                                Object.defineProperty(xhr, 'responseText', { value: modifiedResponse });
-                                console.log('已修改响应体中的 SelectedMaxCount 为 \(selectedMaxCount)');
-                            }
+
+                            try {
+                                const mocked = __tcMaybeMockQueryEnResponse(xhr._url, responseText);
+                                if (mocked && typeof mocked === 'string') {
+                                    responseText = mocked;
+                                    try {
+                                        Object.defineProperty(xhr, 'responseText', {
+                                            configurable: true,
+                                            get: function() { return responseText; }
+                                        });
+                                    } catch (e) {}
+
+                                    // Some pages read xhr.response instead of xhr.responseText.
+                                    try {
+                                        Object.defineProperty(xhr, 'response', {
+                                            configurable: true,
+                                            get: function() { return responseText; }
+                                        });
+                                    } catch (e) {}
+                                }
+                            } catch (e) {}
+
+                            try {
+                                __tcLogQueryEnResponse(xhr._url, responseText);
+                            } catch (e) {}
                         } catch (e) {
                             console.error('修改响应失败:', e);
                         }
@@ -260,6 +629,48 @@ class WebViewCoordinator: NSObject, WKNavigationDelegate, ObservableObject {
 
                 return originalSend.apply(this, arguments);
             };
+
+            const originalFetch = window.fetch;
+            if (originalFetch) {
+                window.fetch = function(input, init) {
+                    return originalFetch.call(this, input, init).then(function(resp) {
+                        try {
+                            const url = (typeof input === 'string') ? input : (input && input.url ? input.url : '');
+                            if (!__tcIsQueryEn(url)) return resp;
+                            const cloned = resp.clone();
+                            return cloned.text().then(function(txt) {
+                                let responseText = txt;
+
+                                try {
+                                    const mocked = __tcMaybeMockQueryEnResponse(url, responseText);
+                                    if (mocked && typeof mocked === 'string') {
+                                        responseText = mocked;
+                                    }
+                                } catch (e) {}
+
+                                try {
+                                    __tcLogQueryEnResponse(url, responseText);
+                                } catch (e) {}
+
+                                try {
+                                    if (responseText && responseText.includes('"SelectedMaxCount":')) {
+                                        responseText = responseText.replace(/"SelectedMaxCount":\\d+/g, '"SelectedMaxCount":\(selectedMaxCount)');
+                                    }
+                                } catch (e) {}
+
+                                if (responseText !== txt) {
+                                    return new Response(responseText, { status: resp.status, statusText: resp.statusText, headers: resp.headers });
+                                }
+                                return resp;
+                            }).catch(function() {
+                                return resp;
+                            });
+                        } catch (e) {
+                            return resp;
+                        }
+                    });
+                };
+            }
         })();
         """
 
@@ -270,8 +681,44 @@ class WebViewCoordinator: NSObject, WKNavigationDelegate, ObservableObject {
             forMainFrameOnly: false
         )
 
+        webView.configuration.userContentController.removeAllUserScripts()
         webView.configuration.userContentController.addUserScript(userScript)
         print("已添加响应拦截脚本")
+    }
+
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard message.name == "tingcheLog" else { return }
+
+        let payload = message.body
+        let text: String
+        if let dict = payload as? [String: Any] {
+            let level = dict["level"] as? String ?? "info"
+            let msg = dict["message"] as? String ?? ""
+            let url = dict["url"] as? String ?? ""
+            var extraText = ""
+            if let extra = dict["extra"], !(extra is NSNull) {
+                if let extraDict = extra as? [String: Any],
+                   let data = try? JSONSerialization.data(withJSONObject: extraDict, options: [.sortedKeys]),
+                   let s = String(data: data, encoding: .utf8) {
+                    extraText = " \(s)"
+                } else if let extraArr = extra as? [Any],
+                          let data = try? JSONSerialization.data(withJSONObject: extraArr, options: [.sortedKeys]),
+                          let s = String(data: data, encoding: .utf8) {
+                    extraText = " \(s)"
+                } else {
+                    extraText = " \(String(describing: extra))"
+                }
+            }
+
+            text = "[\(level)] \(msg) \(url)\(extraText)"
+        } else {
+            text = "\(payload)"
+        }
+
+        print("[WebView] \(text)")
+        Task { @MainActor in
+            LogStore.shared.add(category: "WebView", text)
+        }
     }
 
     func cleanupWebView() {

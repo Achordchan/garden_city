@@ -4,8 +4,7 @@
 //  SettingsView.swift
 //  tingche
 //
-//  Created by AI Assistant on 2025/9/8.
-//
+
 
 import SwiftUI
 import AppKit
@@ -29,8 +28,6 @@ struct SettingsView: View {
     @State private var showingLicensePlateManager = false
     
     @State private var selectedTab: SettingsTab = .basic
-    @State private var advancedKeyInput = ""
-    @State private var isAdvancedUnlocked = false
     
     private static let integerFormatter: NumberFormatter = {
         let formatter = NumberFormatter()
@@ -65,9 +62,7 @@ struct SettingsView: View {
             SettingsAdvancedTabView(
                 dataManager: dataManager,
                 accountManager: accountManager,
-                viewModel: viewModel,
-                advancedKeyInput: $advancedKeyInput,
-                isAdvancedUnlocked: $isAdvancedUnlocked
+                viewModel: viewModel
             )
         }
     }

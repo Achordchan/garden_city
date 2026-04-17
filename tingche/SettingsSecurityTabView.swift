@@ -168,7 +168,7 @@ struct SettingsSecurityTabView: View {
                 GroupBox(label: HStack {
                     Label("数据管理", systemImage: "tray.full.fill")
                     Spacer()
-                    Text("删除：\(dataManager.deletedAccounts.count)")
+                    Text("养号：\(accountManager.nurseryAccounts.count) · 删除：\(dataManager.deletedAccounts.count)")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                 }) {
@@ -177,7 +177,7 @@ struct SettingsSecurityTabView: View {
                             VStack(alignment: .leading) {
                                 Text("删除记录")
                                     .font(.headline)
-                                Text("查看已删除的账号记录")
+                                Text("查看已彻底删除的账号记录")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                             }
@@ -203,7 +203,7 @@ struct SettingsSecurityTabView: View {
 
                             Spacer()
 
-                            Text("\(accountManager.accounts.count) 个")
+                            Text("主 \(accountManager.accounts.count) · 养 \(accountManager.nurseryAccounts.count)")
                                 .font(.title2)
                                 .fontWeight(.bold)
                                 .foregroundColor(.blue)
