@@ -4,7 +4,6 @@ import SwiftUI
 
 struct ContentToolbar: ToolbarContent {
     private let mainPrincipalContentWidth: CGFloat = 520
-    private let nurseryPrincipalContentWidth: CGFloat = 240
     private let plateMenuWidth: CGFloat = 92
     private let nurserySearchFieldWidth: CGFloat = 150
 
@@ -145,7 +144,7 @@ struct ContentToolbar: ToolbarContent {
                     .animation(.easeInOut(duration: 0.15), value: viewModel.showOnlyUnprocessed)
                 }
             }
-            .frame(width: currentPrincipalContentWidth, alignment: .leading)
+            .frame(width: mainPrincipalContentWidth, alignment: .leading)
         }
 
         ToolbarItemGroup(placement: .primaryAction) {
@@ -207,9 +206,6 @@ struct ContentToolbar: ToolbarContent {
         }
     }
 
-    private var currentPrincipalContentWidth: CGFloat {
-        viewModel.isNurserySectionSelected ? nurseryPrincipalContentWidth : mainPrincipalContentWidth
-    }
 }
 
 private struct ToolbarSearchAccessory: View {
