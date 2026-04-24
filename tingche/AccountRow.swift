@@ -257,6 +257,7 @@ struct AccountRow: View {
                         onClose: {
                             Task {
                                 await self.accountManager.refreshVoucherCount(for: self.account)
+                                await self.accountManager.refreshBonus(for: self.account)
                             }
                         }
                     )

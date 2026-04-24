@@ -206,7 +206,7 @@ struct ParkingFeeQuerySheet: View {
             throw ParkingFeeQuerySheetError.missingForcedAccount
         }
 
-        guard let account = accountManager.accounts.first(where: { $0.id.uuidString == forcedAccountId }) else {
+        guard let account = accountManager.allManagedAccounts().first(where: { $0.id.uuidString == forcedAccountId }) else {
             throw ParkingFeeQuerySheetError.forcedAccountNotFound
         }
 
@@ -234,6 +234,9 @@ struct ParkingFeeQuerySheet: View {
             if let index = accountManager.accounts.firstIndex(where: { $0.id == account.id }) {
                 accountManager.accounts[index] = updatedAccount
                 accountManager.saveAccounts()
+            } else if let index = accountManager.nurseryAccounts.firstIndex(where: { $0.id == account.id }) {
+                accountManager.nurseryAccounts[index] = updatedAccount
+                accountManager.saveNurseryAccounts()
             }
         }
 
@@ -274,6 +277,15 @@ struct ParkingFeeQuerySheet: View {
 
     private func openParkingDetails() {
         guard let preparedAccount else { return }
-        ParkingDetailWindowPresenter.present(account: preparedAccount, dataManager: dataManager)
+        ParkingDetailWindowPresenter.present(
+            account: preparedAccount,
+            dataManager: dataManager,
+            onClose: {
+                Task {
+                    await accountManager.refreshVoucherCount(for: preparedAccount)
+                    await accountManager.refreshBonus(for: preparedAccount)
+                }
+            }
+        )
     }
 }

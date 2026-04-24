@@ -113,8 +113,8 @@ final class AccountsViewModel: ObservableObject {
 
         accountManager.$accounts
             .combineLatest(accountManager.$nurseryAccounts)
-            .sink { [weak self] _, _ in
-                self?.recomputeDisplayedAccounts()
+            .sink { [weak self] accounts, nurseryAccounts in
+                self?.recomputeDisplayedAccounts(accounts: accounts, nurseryAccounts: nurseryAccounts)
             }
             .store(in: &cancellables)
 
@@ -307,21 +307,26 @@ final class AccountsViewModel: ObservableObject {
         UserDefaults.standard.set(true, forKey: MigrationKeys.deletedAccountsToNurseryV1)
     }
 
-    private func recomputeDisplayedAccounts() {
+    private func recomputeDisplayedAccounts(
+        accounts: [AccountInfo]? = nil,
+        nurseryAccounts: [AccountInfo]? = nil
+    ) {
         if !Thread.isMainThread {
             DispatchQueue.main.async { [weak self] in
-                self?.recomputeDisplayedAccounts()
+                self?.recomputeDisplayedAccounts(accounts: accounts, nurseryAccounts: nurseryAccounts)
             }
             return
         }
 
+        let mainAccounts = accounts ?? accountManager.accounts
+        let nurseryAccounts = nurseryAccounts ?? accountManager.nurseryAccounts
         let computedAccounts: [AccountInfo]
 
         if selectedSection == .main, showOnlyUnprocessed {
-            computedAccounts = accountManager.accounts.filter { !$0.isProcessedToday }
+            computedAccounts = mainAccounts.filter { !$0.isProcessedToday }
         } else if selectedSection == .nursery {
             let keyword = nurserySearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-            let indexedAccounts = accountManager.nurseryAccounts.enumerated().map { index, account in
+            let indexedAccounts = nurseryAccounts.enumerated().map { index, account in
                 (index, account)
             }
 
@@ -357,7 +362,7 @@ final class AccountsViewModel: ObservableObject {
 
             computedAccounts = sortedAccounts.map(\.1)
         } else {
-            computedAccounts = currentSectionAccounts
+            computedAccounts = selectedSection == .main ? mainAccounts : nurseryAccounts
         }
 
         displayedAccounts = computedAccounts
