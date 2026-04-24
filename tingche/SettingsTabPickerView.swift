@@ -8,8 +8,8 @@ struct SettingsTabPickerView: View {
     var body: some View {
         HStack {
             Picker("", selection: $selectedTab) {
-                Label("基本", systemImage: "gearshape").tag(SettingsTab.basic)
-                Label("备份", systemImage: "lock.shield").tag(SettingsTab.security)
+                Label("基础", systemImage: "gearshape").tag(SettingsTab.basic)
+                Label("安全", systemImage: "lock.shield").tag(SettingsTab.security)
                 Label("高级", systemImage: "gearshape.2").tag(SettingsTab.advanced)
             }
             .pickerStyle(.segmented)

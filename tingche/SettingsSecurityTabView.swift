@@ -114,7 +114,7 @@ struct SettingsSecurityTabView: View {
                 }
 
                 GroupBox(label: HStack {
-                    Label("备份操作", systemImage: "arrow.up.doc.on.clipboard")
+                    Label("备份与恢复", systemImage: "arrow.up.doc.on.clipboard")
                     Spacer()
                     Text("备份：\(dataManager.backupFiles.count) 个")
                         .font(.subheadline)
@@ -166,7 +166,7 @@ struct SettingsSecurityTabView: View {
                 }
 
                 GroupBox(label: HStack {
-                    Label("数据管理", systemImage: "tray.full.fill")
+                    Label("数据记录", systemImage: "tray.full.fill")
                     Spacer()
                     Text("养号：\(accountManager.nurseryAccounts.count) · 删除：\(dataManager.deletedAccounts.count)")
                         .font(.subheadline)
@@ -188,25 +188,6 @@ struct SettingsSecurityTabView: View {
                                 showingDeletedAccountsView = true
                             }
                             .buttonStyle(.bordered)
-                        }
-
-                        Divider()
-
-                        HStack {
-                            VStack(alignment: .leading) {
-                                Text("当前账号数量")
-                                    .font(.headline)
-                                Text("正在管理的账号总数")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-
-                            Spacer()
-
-                            Text("主 \(accountManager.accounts.count) · 养 \(accountManager.nurseryAccounts.count)")
-                                .font(.title2)
-                                .fontWeight(.bold)
-                                .foregroundColor(.blue)
                         }
                     }
                 }

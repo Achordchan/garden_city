@@ -18,10 +18,6 @@ final class MainWindowDelegate: NSObject, NSWindowDelegate {
 
 // 添加一个WindowSetupModifier以控制窗口设置
 struct WindowSetupModifier: ViewModifier {
-    let selectedSection: AccountDisplaySection
-    @Binding var showingNurserySearch: Bool
-    @Binding var nurserySearchQuery: String
-
     func body(content: Content) -> some View {
         content
             .frame(width: 1020)
@@ -97,18 +93,8 @@ struct WindowSetupModifier: ViewModifier {
 
 // 扩展View以应用修饰符
 extension View {
-    func setupMainWindow(
-        selectedSection: AccountDisplaySection,
-        showingNurserySearch: Binding<Bool>,
-        nurserySearchQuery: Binding<String>
-    ) -> some View {
-        self.modifier(
-            WindowSetupModifier(
-                selectedSection: selectedSection,
-                showingNurserySearch: showingNurserySearch,
-                nurserySearchQuery: nurserySearchQuery
-            )
-        )
+    func setupMainWindow() -> some View {
+        self.modifier(WindowSetupModifier())
     }
 }
 

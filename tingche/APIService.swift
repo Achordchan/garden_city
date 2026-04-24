@@ -15,7 +15,7 @@ final class APIService: @unchecked Sendable {
     private let miniProgramReferer = "https://servicewechat.com/wx0ecc3f8bfd59a0d5/41/page-frame.html"
     private let miniProgramUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 MicroMessenger/8.0.62(0x18003e3a) NetType/WIFI Language/zh_CN"
     @Published var currentToken: String?
-    private let debugNetwork = true
+    private let debugNetwork = false
 
     private func numericID(from raw: String) -> String {
         raw.filter { $0.isNumber }

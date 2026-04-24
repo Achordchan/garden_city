@@ -63,11 +63,7 @@ struct ContentView: View {
                 accountManager: viewModel.accountManager
             )
         }
-        .setupMainWindow(
-            selectedSection: viewModel.selectedSection,
-            showingNurserySearch: $showingNurserySearch,
-            nurserySearchQuery: $viewModel.nurserySearchQuery
-        )
+        .setupMainWindow()
         .onAppear {
             viewModel.startBackgroundServicesIfNeeded()
             Task {

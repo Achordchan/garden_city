@@ -69,6 +69,8 @@ struct BetaAccountWindowView: View {
     @State private var selectedPhoneIDs: Set<String> = []
     @State private var statusMessage = "请先登录豪猪，拿到 token 后再继续取号。"
     @State private var statusTone: BetaStatusTone = .info
+    @State private var oneClickFlowTask: Task<Void, Never>?
+    @State private var messagePollingTask: Task<Void, Never>?
     private let oneClickResultsStorageKey = "beta.oneClickResults"
 
     private let workflowSteps: [BetaWorkflowStep] = [
@@ -403,6 +405,9 @@ struct BetaAccountWindowView: View {
         .onAppear {
             oneClickPulse = true
         }
+        .onDisappear {
+            cancelLongRunningTasks()
+        }
     }
 
     private var modeSwitcher: some View {
@@ -476,9 +481,7 @@ struct BetaAccountWindowView: View {
 
                     VStack(alignment: .trailing, spacing: 8) {
                         Button(isRunningOneClick ? "执行中..." : "一键获得账号") {
-                            Task {
-                                await runOneClickFlow()
-                            }
+                            startOneClickFlowTask()
                         }
                         .buttonStyle(.borderedProminent)
                         .controlSize(.large)
@@ -952,9 +955,7 @@ struct BetaAccountWindowView: View {
                     .disabled(!canGetPhone || isGettingPhone)
 
                     Button(isPollingCode ? "轮询中..." : "重新获取验证码") {
-                        Task {
-                            await pollMessage(maxAttempts: 24)
-                        }
+                        startMessagePollingTask(maxAttempts: 24)
                     }
                     .buttonStyle(.bordered)
                     .disabled(!canGetMessage || isPollingCode)
@@ -2482,6 +2483,11 @@ struct BetaAccountWindowView: View {
         }
 
         for attempt in 1...maxAttempts {
+            if Task.isCancelled {
+                await markZhanjiangPollingCancelled(for: phone)
+                return
+            }
+
             let shouldAbort = await MainActor.run { shouldStopPolling || currentPhone != phone }
             if shouldAbort {
                 await MainActor.run {
@@ -2516,7 +2522,14 @@ struct BetaAccountWindowView: View {
                             statusTone = .info
                         }
                         if attempt < maxAttempts {
-                            try? await Task.sleep(nanoseconds: 5_000_000_000)
+                            do {
+                                try await cancellableSleep(nanoseconds: pollingSleepNanoseconds(for: attempt))
+                            } catch is CancellationError {
+                                await markZhanjiangPollingCancelled(for: phone)
+                                return
+                            } catch {
+                                return
+                            }
                         }
                         continue
                     }
@@ -2536,6 +2549,9 @@ struct BetaAccountWindowView: View {
                     statusMessage = "湛江改密短信第 \(attempt)/\(maxAttempts) 次轮询中..."
                     statusTone = .info
                 }
+            } catch is CancellationError {
+                await markZhanjiangPollingCancelled(for: phone)
+                return
             } catch {
                 await MainActor.run {
                     zhanjiangSMSStatus = "轮询异常"
@@ -2545,7 +2561,14 @@ struct BetaAccountWindowView: View {
             }
 
             if attempt < maxAttempts {
-                try? await Task.sleep(nanoseconds: 5_000_000_000)
+                do {
+                    try await cancellableSleep(nanoseconds: pollingSleepNanoseconds(for: attempt))
+                } catch is CancellationError {
+                    await markZhanjiangPollingCancelled(for: phone)
+                    return
+                } catch {
+                    return
+                }
             }
         }
 
@@ -2619,6 +2642,79 @@ struct BetaAccountWindowView: View {
         }
     }
 
+    @MainActor
+    private func startOneClickFlowTask() {
+        oneClickFlowTask?.cancel()
+        oneClickFlowTask = Task {
+            await runOneClickFlow()
+            await MainActor.run {
+                oneClickFlowTask = nil
+            }
+        }
+    }
+
+    @MainActor
+    private func startMessagePollingTask(maxAttempts: Int) {
+        messagePollingTask?.cancel()
+        messagePollingTask = Task {
+            await pollMessage(maxAttempts: maxAttempts)
+            await MainActor.run {
+                messagePollingTask = nil
+            }
+        }
+    }
+
+    @MainActor
+    private func cancelLongRunningTasks() {
+        shouldStopPolling = true
+        messagePollingTask?.cancel()
+        messagePollingTask = nil
+        oneClickFlowTask?.cancel()
+        oneClickFlowTask = nil
+    }
+
+    private func cancellableSleep(nanoseconds: UInt64) async throws {
+        try Task.checkCancellation()
+        try await Task.sleep(nanoseconds: nanoseconds)
+        try Task.checkCancellation()
+    }
+
+    private func pollingSleepNanoseconds(for attempt: Int) -> UInt64 {
+        let extraSeconds = min((attempt - 1) / 8, 2)
+        return UInt64(5 + extraSeconds) * 1_000_000_000
+    }
+
+    private func waitForSheetDismissal(_ isPresented: @escaping @MainActor () -> Bool) async throws {
+        while await MainActor.run(body: isPresented) {
+            try await cancellableSleep(nanoseconds: 200_000_000)
+        }
+    }
+
+    private func markSMSPollingCancelled(phone: String) async {
+        await MainActor.run {
+            currentCode = "已停止"
+            currentSMS = "短信内容：轮询任务已取消"
+            updatePhoneRecord(
+                phone: phone,
+                status: .stopped,
+                code: "已停止",
+                sms: "轮询任务已取消"
+            )
+            statusMessage = "号码 \(phone) 的验证码轮询已取消。"
+            statusTone = .info
+        }
+    }
+
+    private func markZhanjiangPollingCancelled(for phone: String) async {
+        await MainActor.run {
+            zhanjiangReceivedCode = "已停止"
+            zhanjiangReceivedSMS = "短信内容：轮询任务已取消"
+            zhanjiangSMSStatus = "轮询已取消"
+            statusMessage = "号码 \(phone) 的湛江改密短信轮询已取消。"
+            statusTone = .info
+        }
+    }
+
     private func runOneClickFlow() async {
         guard !isRunningOneClick else { return }
 
@@ -2688,9 +2784,7 @@ struct BetaAccountWindowView: View {
                 await MainActor.run {
                     showingCaptchaSheet = true
                 }
-                while await MainActor.run(body: { showingCaptchaSheet }) {
-                    try? await Task.sleep(nanoseconds: 200_000_000)
-                }
+                try await waitForSheetDismissal { showingCaptchaSheet }
             }
 
             try await runOneClickStep(.passwordSMS) {
@@ -2749,6 +2843,13 @@ struct BetaAccountWindowView: View {
                 }
                 statusTone = .success
             }
+        } catch is CancellationError {
+            await MainActor.run {
+                showingCaptchaSheet = false
+                showingManualSMSCodeSheet = false
+                statusMessage = "一键流程已取消。"
+                statusTone = .info
+            }
         } catch {
             await MainActor.run {
                 statusMessage = "一键流程中断：\(error.localizedDescription)"
@@ -2775,6 +2876,7 @@ struct BetaAccountWindowView: View {
         var lastErrorMessage = "取号后未拿到有效手机号"
 
         for attempt in 1...maxAttempts {
+            try Task.checkCancellation()
             await MainActor.run {
                 statusMessage = "正在取号，第 \(attempt)/\(maxAttempts) 次尝试..."
                 statusTone = .info
@@ -2803,7 +2905,7 @@ struct BetaAccountWindowView: View {
                     statusMessage = "第 \(attempt)/\(maxAttempts) 次取号失败，2 秒后自动重试..."
                     statusTone = .info
                 }
-                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                try await cancellableSleep(nanoseconds: 2_000_000_000)
             }
         }
 
@@ -2830,6 +2932,7 @@ struct BetaAccountWindowView: View {
         var lastErrorMessage = "湛江改密短信验证码未收到"
 
         for attempt in 1...maxAttempts {
+            try Task.checkCancellation()
             await MainActor.run {
                 statusMessage = "正在发送湛江改密短信验证码，第 \(attempt)/\(maxAttempts) 次尝试..."
                 statusTone = .info
@@ -2868,9 +2971,7 @@ struct BetaAccountWindowView: View {
                 await MainActor.run {
                     showingCaptchaSheet = true
                 }
-                while await MainActor.run(body: { showingCaptchaSheet }) {
-                    try? await Task.sleep(nanoseconds: 200_000_000)
-                }
+                try await waitForSheetDismissal { showingCaptchaSheet }
                 continue
             }
 
@@ -2885,12 +2986,13 @@ struct BetaAccountWindowView: View {
         var lastErrorMessage = "\(city) 执行后未确认到积分变化"
 
         for attempt in 1...maxAttempts {
+            try Task.checkCancellation()
             await MainActor.run {
                 selectedExpansionCity = city
                 statusMessage = "\(city) 第 \(attempt)/\(maxAttempts) 次执行前，等待系统稳定..."
                 statusTone = .info
             }
-            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            try await cancellableSleep(nanoseconds: 3_000_000_000)
 
             await startExpansionTask()
 
@@ -2903,7 +3005,7 @@ struct BetaAccountWindowView: View {
                 statusMessage = "\(city) 已提交，等待积分系统反应..."
                 statusTone = .info
             }
-            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            try await cancellableSleep(nanoseconds: 5_000_000_000)
 
             let latestTotal = await refreshBonusHistoryAndGetTotal()
 
@@ -2929,7 +3031,7 @@ struct BetaAccountWindowView: View {
                     statusMessage = "\(city) 第 \(attempt)/\(maxAttempts) 次结果未达预期，准备稍后补试一次..."
                     statusTone = .info
                 }
-                try? await Task.sleep(nanoseconds: 5_000_000_000)
+                try await cancellableSleep(nanoseconds: 5_000_000_000)
                 baseline = latestTotal
             }
         }
@@ -2982,10 +3084,17 @@ struct BetaAccountWindowView: View {
         }
 
         do {
+            try Task.checkCancellation()
             try await action()
+            try Task.checkCancellation()
             await MainActor.run {
                 oneClickStepStates[step] = .success
             }
+        } catch is CancellationError {
+            await MainActor.run {
+                oneClickStepStates[step] = .failed("已取消")
+            }
+            throw CancellationError()
         } catch {
             await MainActor.run {
                 oneClickStepStates[step] = .failed(error.localizedDescription)
@@ -3188,7 +3297,7 @@ struct BetaAccountWindowView: View {
             shouldStopPolling = false
             currentCode = "轮询中..."
             currentSMS = "短信内容：等待接收"
-            statusMessage = "号码 \(pollingPhone) 正在轮询验证码，最多等待 \(maxAttempts * 5) 秒..."
+            statusMessage = "号码 \(pollingPhone) 正在轮询验证码，最多尝试 \(maxAttempts) 轮..."
             statusTone = .info
         }
 
@@ -3199,6 +3308,11 @@ struct BetaAccountWindowView: View {
         }
 
         for attempt in 1...maxAttempts {
+            if Task.isCancelled {
+                await markSMSPollingCancelled(phone: pollingPhone)
+                return
+            }
+
             let shouldAbort = await MainActor.run { shouldStopPolling || currentPhone != pollingPhone }
             if shouldAbort {
                 await MainActor.run {
@@ -3247,6 +3361,9 @@ struct BetaAccountWindowView: View {
                     statusMessage = "号码 \(pollingPhone) 第 \(attempt)/\(maxAttempts) 次轮询中，暂未收到短信..."
                     statusTone = .info
                 }
+            } catch is CancellationError {
+                await markSMSPollingCancelled(phone: pollingPhone)
+                return
             } catch {
                 await MainActor.run {
                     statusMessage = "号码 \(pollingPhone) 第 \(attempt)/\(maxAttempts) 次轮询异常：\(error.localizedDescription)"
@@ -3255,18 +3372,25 @@ struct BetaAccountWindowView: View {
             }
 
             if attempt < maxAttempts {
-                try? await Task.sleep(nanoseconds: 5_000_000_000)
+                do {
+                    try await cancellableSleep(nanoseconds: pollingSleepNanoseconds(for: attempt))
+                } catch is CancellationError {
+                    await markSMSPollingCancelled(phone: pollingPhone)
+                    return
+                } catch {
+                    return
+                }
             }
         }
 
         await MainActor.run {
             currentCode = "超时未收到"
-            currentSMS = "短信内容：\(maxAttempts * 5) 秒内未收到可识别短信"
+            currentSMS = "短信内容：\(maxAttempts) 轮内未收到可识别短信"
             updatePhoneRecord(
                 phone: pollingPhone,
                 status: .timeout,
                 code: "超时未收到",
-                sms: "\(maxAttempts * 5) 秒内未收到可识别短信"
+                sms: "\(maxAttempts) 轮内未收到可识别短信"
             )
             statusMessage = "号码 \(pollingPhone) 验证码轮询超时，请稍后重试、释放号码或重新取号。"
             statusTone = .error
@@ -3303,6 +3427,7 @@ struct BetaAccountWindowView: View {
             isReleasingPhone = true
             if currentPhone == phone {
                 shouldStopPolling = true
+                messagePollingTask?.cancel()
             }
             updatePhoneRecord(phone: phone, status: .releasing, code: nil, sms: nil)
             statusMessage = "正在释放号码 \(phone)..."
@@ -3356,6 +3481,7 @@ struct BetaAccountWindowView: View {
             isBlacklistingPhone = true
             if currentPhone == phone {
                 shouldStopPolling = true
+                messagePollingTask?.cancel()
             }
             updatePhoneRecord(phone: phone, status: .blacklisting, code: nil, sms: nil)
             statusMessage = "正在拉黑号码 \(phone)..."
@@ -3406,6 +3532,8 @@ struct BetaAccountWindowView: View {
     @MainActor
     private func resetCurrentPhoneState() {
         shouldStopPolling = false
+        messagePollingTask?.cancel()
+        messagePollingTask = nil
         currentPhone = "待获取"
         currentPhoneMeta = "运营商/归属地：待返回"
         currentCode = "待获取"
@@ -3566,9 +3694,7 @@ struct BetaAccountWindowView: View {
             statusTone = .info
         }
 
-        while await MainActor.run(body: { showingManualSMSCodeSheet }) {
-            try? await Task.sleep(nanoseconds: 200_000_000)
-        }
+        try await waitForSheetDismissal { showingManualSMSCodeSheet }
 
         let code = await MainActor.run {
             manualSMSCodeInput.trimmingCharacters(in: .whitespacesAndNewlines)

@@ -43,6 +43,7 @@ struct SettingsView: View {
         case .basic:
             SettingsBasicTabView(
                 dataManager: dataManager,
+                accountManager: accountManager,
                 showingLicensePlateManager: $showingLicensePlateManager
             )
         case .security:

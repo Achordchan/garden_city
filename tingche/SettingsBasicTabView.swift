@@ -4,6 +4,7 @@ import SwiftUI
 
 struct SettingsBasicTabView: View {
     @ObservedObject var dataManager: DataManager
+    @ObservedObject var accountManager: AccountManager
     @Binding var showingLicensePlateManager: Bool
 
     var body: some View {
@@ -135,6 +136,31 @@ struct SettingsBasicTabView: View {
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                         }
+                    }
+                }
+
+                GroupBox(label: HStack {
+                    Label("账号概览", systemImage: "person.3.fill")
+                    Spacer()
+                    Text("主 \(accountManager.accounts.count) · 养 \(accountManager.nurseryAccounts.count) · 删 \(dataManager.deletedAccounts.count)")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("当前账号数量")
+                                .font(.headline)
+                            Text("主账号、养号区与删除记录数量概览")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+
+                        Spacer()
+
+                        Text("主 \(accountManager.accounts.count) · 养 \(accountManager.nurseryAccounts.count) · 删 \(dataManager.deletedAccounts.count)")
+                            .font(.title3)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.accentColor)
                     }
                 }
             }

@@ -27,6 +27,9 @@ class AccountManager: ObservableObject {
     private let nurseryAccountsKey = "nurseryAccounts"
     private let lastResetDateKey = "lastResetDate"
     private var resetTimer: Timer?
+    private let persistenceDebounceInterval: TimeInterval = 0.22
+    private var accountsPersistWorkItem: DispatchWorkItem?
+    private var nurseryPersistWorkItem: DispatchWorkItem?
 
     enum AccountStorageSection {
         case main
@@ -88,6 +91,8 @@ class AccountManager: ObservableObject {
 
     deinit {
         resetTimer?.invalidate()
+        accountsPersistWorkItem?.cancel()
+        nurseryPersistWorkItem?.cancel()
         NotificationCenter.default.removeObserver(self)
     }
 
@@ -190,24 +195,58 @@ class AccountManager: ObservableObject {
 
     // 保存账号
     func saveAccounts() {
-        do {
-            let data = try JSONEncoder().encode(accounts)
-            UserDefaults.standard.set(data, forKey: accountsKey)
-            print("成功保存\(accounts.count)个账号")
-            NotificationCenter.default.post(name: .accountsStorageDidChange, object: self)
-        } catch {
-            print("保存账号失败: \(error.localizedDescription)")
+        let snapshot: [AccountInfo]
+        if Thread.isMainThread {
+            snapshot = accounts
+        } else {
+            snapshot = DispatchQueue.main.sync { self.accounts }
+        }
+
+        DispatchQueue.main.async {
+            self.accountsPersistWorkItem?.cancel()
+
+            let workItem = DispatchWorkItem { [weak self] in
+                guard let self else { return }
+                do {
+                    let data = try JSONEncoder().encode(snapshot)
+                    UserDefaults.standard.set(data, forKey: self.accountsKey)
+                    print("成功保存\(snapshot.count)个账号")
+                    NotificationCenter.default.post(name: .accountsStorageDidChange, object: self)
+                } catch {
+                    print("保存账号失败: \(error.localizedDescription)")
+                }
+            }
+
+            self.accountsPersistWorkItem = workItem
+            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + self.persistenceDebounceInterval, execute: workItem)
         }
     }
 
     func saveNurseryAccounts() {
-        do {
-            let data = try JSONEncoder().encode(nurseryAccounts)
-            UserDefaults.standard.set(data, forKey: nurseryAccountsKey)
-            print("成功保存\(nurseryAccounts.count)个养号账号")
-            NotificationCenter.default.post(name: .accountsStorageDidChange, object: self)
-        } catch {
-            print("保存养号账号失败: \(error.localizedDescription)")
+        let snapshot: [AccountInfo]
+        if Thread.isMainThread {
+            snapshot = nurseryAccounts
+        } else {
+            snapshot = DispatchQueue.main.sync { self.nurseryAccounts }
+        }
+
+        DispatchQueue.main.async {
+            self.nurseryPersistWorkItem?.cancel()
+
+            let workItem = DispatchWorkItem { [weak self] in
+                guard let self else { return }
+                do {
+                    let data = try JSONEncoder().encode(snapshot)
+                    UserDefaults.standard.set(data, forKey: self.nurseryAccountsKey)
+                    print("成功保存\(snapshot.count)个养号账号")
+                    NotificationCenter.default.post(name: .accountsStorageDidChange, object: self)
+                } catch {
+                    print("保存养号账号失败: \(error.localizedDescription)")
+                }
+            }
+
+            self.nurseryPersistWorkItem = workItem
+            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + self.persistenceDebounceInterval, execute: workItem)
         }
     }
 
@@ -398,12 +437,27 @@ class AccountManager: ObservableObject {
     }
 
     func permanentlyDeleteNurseryAccount(account: AccountInfo) {
-        guard let index = nurseryAccounts.firstIndex(where: { $0.id == account.id }) else { return }
-        let username = nurseryAccounts[index].username
+        if !Thread.isMainThread {
+            DispatchQueue.main.async { [weak self] in
+                self?.permanentlyDeleteNurseryAccount(account: account)
+            }
+            return
+        }
+
+        let targetIndex = nurseryAccounts.firstIndex(where: { $0.id == account.id })
+            ?? nurseryAccounts.firstIndex(where: { $0.username == account.username })
+
+        guard let index = targetIndex else {
+            showToast("删除失败：养号区未找到该账号，请刷新后重试", type: .error)
+            return
+        }
+
+        let targetAccount = nurseryAccounts[index]
+        let username = targetAccount.username
 
         NotificationCenter.default.post(
             name: .accountDeleted,
-            object: nurseryAccounts[index],
+            object: targetAccount,
             userInfo: ["reason": "养号区彻底删除"]
         )
 
@@ -420,7 +474,8 @@ class AccountManager: ObservableObject {
         }
 
         let account = nurseryAccounts[nurseryIndex]
-        guard account.bonus >= 100 else {
+        let threshold = max(0, DataManager.shared.settings.nurseryAutoPromoteBonusThreshold)
+        guard account.bonus >= threshold else {
             return false
         }
 

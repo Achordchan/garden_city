@@ -67,10 +67,31 @@ final class AccountsViewModel: ObservableObject {
     let accountManager: AccountManager
     let dataManager: DataManager
 
-    @Published var showOnlyUnprocessed: Bool = false
-    @Published var selectedSection: AccountDisplaySection = .main
-    @Published var nurserySearchQuery: String = ""
-    @Published var nurserySortOption: NurserySortOption = .addedTimeOldest
+    @Published var showOnlyUnprocessed: Bool = false {
+        didSet {
+            guard oldValue != showOnlyUnprocessed else { return }
+            recomputeDisplayedAccounts()
+        }
+    }
+    @Published var selectedSection: AccountDisplaySection = .main {
+        didSet {
+            guard oldValue != selectedSection else { return }
+            recomputeDisplayedAccounts()
+        }
+    }
+    @Published var nurserySearchQuery: String = "" {
+        didSet {
+            guard oldValue != nurserySearchQuery else { return }
+            recomputeDisplayedAccounts()
+        }
+    }
+    @Published var nurserySortOption: NurserySortOption = .addedTimeOldest {
+        didSet {
+            guard oldValue != nurserySortOption else { return }
+            recomputeDisplayedAccounts()
+        }
+    }
+    @Published private(set) var displayedAccounts: [AccountInfo] = []
 
     private var cancellables = Set<AnyCancellable>()
 
@@ -90,7 +111,15 @@ final class AccountsViewModel: ObservableObject {
             }
             .store(in: &cancellables)
 
+        accountManager.$accounts
+            .combineLatest(accountManager.$nurseryAccounts)
+            .sink { [weak self] _, _ in
+                self?.recomputeDisplayedAccounts()
+            }
+            .store(in: &cancellables)
+
         migrateDeletedAccountsIfNeeded()
+        recomputeDisplayedAccounts()
     }
 
     var gridColumns: [GridItem] {
@@ -124,53 +153,6 @@ final class AccountsViewModel: ObservableObject {
 
     var currentSectionTotalBonus: Int {
         currentSectionAccounts.reduce(0) { $0 + $1.bonus }
-    }
-
-    var displayedAccounts: [AccountInfo] {
-        if selectedSection == .main, showOnlyUnprocessed {
-            return accountManager.accounts.filter { !$0.isProcessedToday }
-        }
-
-        if selectedSection == .nursery {
-            let keyword = nurserySearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-            let indexedAccounts = accountManager.nurseryAccounts.enumerated().map { index, account in
-                (index, account)
-            }
-
-            let filteredAccounts = indexedAccounts.filter { _, account in
-                guard !keyword.isEmpty else { return true }
-                return account.username.localizedCaseInsensitiveContains(keyword)
-            }
-
-            let sortedAccounts: [(Int, AccountInfo)] = switch nurserySortOption {
-            case .addedTimeNewest:
-                filteredAccounts.sorted { lhs, rhs in
-                    lhs.0 > rhs.0
-                }
-            case .addedTimeOldest:
-                filteredAccounts.sorted { lhs, rhs in
-                    lhs.0 < rhs.0
-                }
-            case .bonusHighToLow:
-                filteredAccounts.sorted { lhs, rhs in
-                    if lhs.1.bonus == rhs.1.bonus {
-                        return lhs.0 < rhs.0
-                    }
-                    return lhs.1.bonus > rhs.1.bonus
-                }
-            case .bonusLowToHigh:
-                filteredAccounts.sorted { lhs, rhs in
-                    if lhs.1.bonus == rhs.1.bonus {
-                        return lhs.0 < rhs.0
-                    }
-                    return lhs.1.bonus < rhs.1.bonus
-                }
-            }
-
-            return sortedAccounts.map(\.1)
-        }
-
-        return currentSectionAccounts
     }
 
     var shouldShowFilteredEmptyState: Bool {
@@ -235,14 +217,20 @@ final class AccountsViewModel: ObservableObject {
 
     func moveAccountToNursery(_ account: AccountInfo) {
         accountManager.moveAccountToNursery(account: account)
+        recomputeDisplayedAccounts()
     }
 
     func moveNurseryAccountToMain(_ account: AccountInfo) {
         accountManager.moveNurseryAccountToMain(account: account)
+        recomputeDisplayedAccounts()
     }
 
     func permanentlyDeleteNurseryAccount(_ account: AccountInfo) {
         accountManager.permanentlyDeleteNurseryAccount(account: account)
+        recomputeDisplayedAccounts()
+        DispatchQueue.main.async { [weak self] in
+            self?.recomputeDisplayedAccounts()
+        }
     }
 
     func refreshBonus(for account: AccountInfo) async {
@@ -317,5 +305,61 @@ final class AccountsViewModel: ObservableObject {
 
         accountManager.importDeletedAccountsToNurseryIfNeeded(dataManager.deletedAccounts)
         UserDefaults.standard.set(true, forKey: MigrationKeys.deletedAccountsToNurseryV1)
+    }
+
+    private func recomputeDisplayedAccounts() {
+        if !Thread.isMainThread {
+            DispatchQueue.main.async { [weak self] in
+                self?.recomputeDisplayedAccounts()
+            }
+            return
+        }
+
+        let computedAccounts: [AccountInfo]
+
+        if selectedSection == .main, showOnlyUnprocessed {
+            computedAccounts = accountManager.accounts.filter { !$0.isProcessedToday }
+        } else if selectedSection == .nursery {
+            let keyword = nurserySearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+            let indexedAccounts = accountManager.nurseryAccounts.enumerated().map { index, account in
+                (index, account)
+            }
+
+            let filteredAccounts = indexedAccounts.filter { _, account in
+                guard !keyword.isEmpty else { return true }
+                return account.username.localizedCaseInsensitiveContains(keyword)
+            }
+
+            let sortedAccounts: [(Int, AccountInfo)] = switch nurserySortOption {
+            case .addedTimeNewest:
+                filteredAccounts.sorted { lhs, rhs in
+                    lhs.0 > rhs.0
+                }
+            case .addedTimeOldest:
+                filteredAccounts.sorted { lhs, rhs in
+                    lhs.0 < rhs.0
+                }
+            case .bonusHighToLow:
+                filteredAccounts.sorted { lhs, rhs in
+                    if lhs.1.bonus == rhs.1.bonus {
+                        return lhs.0 < rhs.0
+                    }
+                    return lhs.1.bonus > rhs.1.bonus
+                }
+            case .bonusLowToHigh:
+                filteredAccounts.sorted { lhs, rhs in
+                    if lhs.1.bonus == rhs.1.bonus {
+                        return lhs.0 < rhs.0
+                    }
+                    return lhs.1.bonus < rhs.1.bonus
+                }
+            }
+
+            computedAccounts = sortedAccounts.map(\.1)
+        } else {
+            computedAccounts = currentSectionAccounts
+        }
+
+        displayedAccounts = computedAccounts
     }
 }

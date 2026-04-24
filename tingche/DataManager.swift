@@ -33,6 +33,7 @@ struct AppSettings: Codable {
     var betaHaozhuProjectID: String
     var autoCheckinTargetMallID: Int?
     var autoCheckinTargetMallName: String?
+    var nurseryAutoPromoteBonusThreshold: Int
     
     init() {
         self.backupLocation = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.path ?? ""
@@ -57,6 +58,7 @@ struct AppSettings: Codable {
         self.betaHaozhuProjectID = ""
         self.autoCheckinTargetMallID = nil
         self.autoCheckinTargetMallName = nil
+        self.nurseryAutoPromoteBonusThreshold = 100
     }
 
     enum CodingKeys: String, CodingKey {
@@ -82,6 +84,7 @@ struct AppSettings: Codable {
         case betaHaozhuProjectID
         case autoCheckinTargetMallID
         case autoCheckinTargetMallName
+        case nurseryAutoPromoteBonusThreshold
     }
 
     init(from decoder: Decoder) throws {
@@ -111,6 +114,10 @@ struct AppSettings: Codable {
         self.betaHaozhuProjectID = try container.decodeIfPresent(String.self, forKey: .betaHaozhuProjectID) ?? ""
         self.autoCheckinTargetMallID = try container.decodeIfPresent(Int.self, forKey: .autoCheckinTargetMallID)
         self.autoCheckinTargetMallName = try container.decodeIfPresent(String.self, forKey: .autoCheckinTargetMallName)
+        self.nurseryAutoPromoteBonusThreshold = max(
+            0,
+            try container.decodeIfPresent(Int.self, forKey: .nurseryAutoPromoteBonusThreshold) ?? 100
+        )
     }
 
     func encode(to encoder: Encoder) throws {
@@ -137,6 +144,7 @@ struct AppSettings: Codable {
         try container.encode(betaHaozhuProjectID, forKey: .betaHaozhuProjectID)
         try container.encodeIfPresent(autoCheckinTargetMallID, forKey: .autoCheckinTargetMallID)
         try container.encodeIfPresent(autoCheckinTargetMallName, forKey: .autoCheckinTargetMallName)
+        try container.encode(nurseryAutoPromoteBonusThreshold, forKey: .nurseryAutoPromoteBonusThreshold)
     }
 }
 
@@ -193,6 +201,11 @@ struct BackupFileInfo: Identifiable, Codable {
 
 // MARK: - 数据管理器
 class DataManager: ObservableObject {
+    private struct AutoBackupConfig: Equatable {
+        let enabled: Bool
+        let intervalHours: Int
+    }
+
     static let shared = DataManager()
 
     @Published var settings: AppSettings = AppSettings()
@@ -209,6 +222,8 @@ class DataManager: ObservableObject {
     
     private var backupTimer: Timer?
     private var securityScopedBookmark: Data?
+    private var appliedAutoBackupConfig: AutoBackupConfig?
+    private var pendingSettingsSaveWorkItem: DispatchWorkItem?
     
     init() {
         loadSettings()
@@ -222,6 +237,7 @@ class DataManager: ObservableObject {
     
     deinit {
         backupTimer?.invalidate()
+        pendingSettingsSaveWorkItem?.cancel()
         NotificationCenter.default.removeObserver(self)
     }
     
@@ -233,16 +249,27 @@ class DataManager: ObservableObject {
         }
     }
     
-    func saveSettings() {
+    func saveSettings(rebuildAutoBackup: Bool = true) {
         do {
             let data = try JSONEncoder().encode(settings)
             UserDefaults.standard.set(data, forKey: settingsKey)
             
-            // 重新设置自动备份
-            setupAutoBackup()
+            if rebuildAutoBackup {
+                setupAutoBackup()
+            }
         } catch {
             print("保存设置失败: \(error.localizedDescription)")
         }
+    }
+
+    func saveSettingsDebounced(rebuildAutoBackup: Bool = false) {
+        pendingSettingsSaveWorkItem?.cancel()
+
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.saveSettings(rebuildAutoBackup: rebuildAutoBackup)
+        }
+        pendingSettingsSaveWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: workItem)
     }
     
     // MARK: - 安全书签管理
@@ -265,12 +292,21 @@ class DataManager: ObservableObject {
         if let data = UserDefaults.standard.data(forKey: deletedAccountsKey),
            let deletedAccounts = try? JSONDecoder().decode([DeletedAccountRecord].self, from: data) {
             self.deletedAccounts = deletedAccounts
+            if deduplicateDeletedAccountsInPlace() {
+                saveDeletedAccountsPrivate()
+            }
         }
     }
     
     func addDeletedAccountRecord(_ account: AccountInfo, reason: String? = nil) {
         let record = DeletedAccountRecord(accountInfo: account, reason: reason)
-        deletedAccounts.append(record)
+        let key = deletedAccountKey(for: account.username)
+        if let existingIndex = deletedAccounts.lastIndex(where: { deletedAccountKey(for: $0.accountInfo.username) == key }) {
+            deletedAccounts[existingIndex] = record
+        } else {
+            deletedAccounts.append(record)
+        }
+        _ = deduplicateDeletedAccountsInPlace()
         saveDeletedAccountsPrivate()
     }
     
@@ -291,6 +327,30 @@ class DataManager: ObservableObject {
         } catch {
             print("保存删除记录失败: \(error.localizedDescription)")
         }
+    }
+
+    private func deletedAccountKey(for username: String) -> String {
+        username.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    @discardableResult
+    private func deduplicateDeletedAccountsInPlace() -> Bool {
+        guard deletedAccounts.count > 1 else { return false }
+
+        var seenKeys = Set<String>()
+        var deduplicatedReversed: [DeletedAccountRecord] = []
+        deduplicatedReversed.reserveCapacity(deletedAccounts.count)
+
+        for record in deletedAccounts.reversed() {
+            let key = deletedAccountKey(for: record.accountInfo.username)
+            guard seenKeys.insert(key).inserted else { continue }
+            deduplicatedReversed.append(record)
+        }
+
+        let deduplicated = deduplicatedReversed.reversed()
+        guard deduplicated.count != deletedAccounts.count else { return false }
+        deletedAccounts = Array(deduplicated)
+        return true
     }
     
     // MARK: - 备份文件管理
@@ -497,10 +557,19 @@ class DataManager: ObservableObject {
     
     // MARK: - 自动备份
     private func setupAutoBackup() {
+        let newConfig = AutoBackupConfig(
+            enabled: settings.autoBackupEnabled,
+            intervalHours: settings.backupInterval
+        )
+        guard newConfig != appliedAutoBackupConfig else {
+            return
+        }
+        appliedAutoBackupConfig = newConfig
+
         backupTimer?.invalidate()
-        
+
         guard settings.autoBackupEnabled else { return }
-        
+
         let interval = TimeInterval(settings.backupInterval * 3600) // 转换为秒
         backupTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             self?.triggerAutoBackup()

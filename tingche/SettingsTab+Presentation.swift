@@ -8,9 +8,9 @@ extension SettingsTab {
         case .basic:
             return "车牌与兑换相关设置"
         case .security:
-            return "备份、恢复与数据管理"
+            return "备份、恢复与数据记录"
         case .advanced:
-            return "需要管理员秘钥"
+            return "自动化与调试设置"
         }
     }
 
