@@ -24,7 +24,7 @@ struct tingcheApp: App {
         Window("关于", id: "about") {
             AboutView()
         }
-        .defaultSize(width: 720, height: 540)
+        .defaultSize(width: 760, height: 540)
         .windowResizability(.contentSize)
 
         Window("日志", id: "logs") {

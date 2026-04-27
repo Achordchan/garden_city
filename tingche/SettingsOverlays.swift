@@ -20,7 +20,7 @@ struct SettingsOverlaysModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .onChange(of: showingFolderPicker) { isPresented in
+            .onChange(of: showingFolderPicker) { _, isPresented in
                 if isPresented {
                     DispatchQueue.main.async {
                         onFolderPickerRequested()

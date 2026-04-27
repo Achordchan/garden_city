@@ -2684,8 +2684,9 @@ struct BetaAccountWindowView: View {
         return UInt64(5 + extraSeconds) * 1_000_000_000
     }
 
-    private func waitForSheetDismissal(_ isPresented: @escaping @MainActor () -> Bool) async throws {
-        while await MainActor.run(body: isPresented) {
+    @MainActor
+    private func waitForSheetDismissal(_ isPresented: @escaping () -> Bool) async throws {
+        while isPresented() {
             try await cancellableSleep(nanoseconds: 200_000_000)
         }
     }
