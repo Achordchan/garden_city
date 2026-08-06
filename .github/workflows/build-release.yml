@@ -1,0 +1,76 @@
+name: Build DMG & ZIP and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release 版本号（如 3.2，可带 v 前缀）'
+        required: true
+        type: string
+
+jobs:
+  build-and-release:
+    runs-on: macos-15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Compute version
+        id: version
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            RAW="${{ github.ref_name }}"
+          else
+            RAW="${{ github.event.inputs.version }}"
+          fi
+          VERSION="${RAW#v}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Build Release (ad-hoc signed)
+        run: |
+          xcodebuild -project tingche.xcodeproj \
+            -scheme tingche \
+            -configuration Release \
+            -derivedDataPath build \
+            CODE_SIGN_IDENTITY=- \
+            CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM= \
+            CODE_SIGNING_REQUIRED=YES \
+            CODE_SIGNING_ALLOWED=YES \
+            build
+
+      - name: Verify signature
+        run: |
+          APP="build/Build/Products/Release/花园城停车助手v3.app"
+          test -d "$APP"
+          codesign --verify --deep --strict "$APP"
+
+      - name: Package DMG & ZIP
+        run: |
+          APP="build/Build/Products/Release/花园城停车助手v3.app"
+          hdiutil create -volname "花园城停车助手v3" \
+            -srcfolder "$APP" -ov -format UDZO "GC_v${{ steps.version.outputs.version }}.dmg"
+          ditto -c -k --sequesterRsrc --keepParent "$APP" "GC_v${{ steps.version.outputs.version }}.zip"
+          ls -lh GC_v*.dmg GC_v*.zip
+
+      - name: Create tag & release, upload assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          TAG="v${VERSION}"
+          if [[ "${{ github.ref_type }}" != "tag" ]]; then
+            gh api "repos/${GITHUB_REPOSITORY}/git/refs" \
+              -f ref="refs/tags/${TAG}" -f sha="${GITHUB_SHA}" > /dev/null
+          fi
+          gh release create "${TAG}" \
+            GC_v"${VERSION}".dmg GC_v"${VERSION}".zip \
+            --repo "${GITHUB_REPOSITORY}" \
+            --title "v${VERSION}" \
+            --generate-notes
